@@ -1,0 +1,13 @@
+numeric:
+  - age
+  - sofa
+  - lactate
+  - creatinine
+  - heart_rate
+categorical:
+  - sex
+  - stage
+  - icu_type
+  - treatment
+ drop:
+  - note

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Clinical Survival ML Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; color: #2c3e50; }
+    h1, h2 { color: #1f2d3d; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    th { background: #f5f7fa; }
+    .figure-grid { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+    .figure { flex: 1 1 45%; background: #f8f9fb; padding: 0.75rem; border-radius: 6px; box-shadow: inset 0 0 0 1px #e5e9f2; }
+    .figure img { max-width: 100%; height: auto; border-radius: 4px; }
+    .figure h3 { margin-top: 0; }
+    .shap-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+    .shap-gallery img { width: 100%; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+  </style>
+</head>
+<body>
+  <h1>Clinical Survival ML Report</h1>
+  <p><strong>Dataset:</strong> {{ dataset.name }} • <strong>Samples:</strong> {{ dataset.n_samples }}{% if dataset.n_external_samples %} (external: {{ dataset.n_external_samples }}){% endif %}</p>
+  <p><strong>Generated:</strong> {{ generated }}</p>
+
+  <h2>Model Leaderboard</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>C-index</th>
+        <th>IBS</th>
+        {% if leaderboard and leaderboard[0] is defined %}
+          {% for key in leaderboard[0].keys() if key.startswith('brier@') %}
+            <th>{{ key }}</th>
+          {% endfor %}
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in leaderboard %}
+      <tr>
+        <td>{{ row.model }}</td>
+        <td>{{ '%.3f'|format(row.concordance) }}</td>
+        <td>{{ '%.3f'|format(row.ibs) }}</td>
+        {% for key, value in row.items() if key.startswith('brier@') %}
+          <td>{{ '%.3f'|format(value) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if external_metrics %}
+  <h2>External Validation{% if best_model %} — {{ best_model }}{% endif %}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>C-index</th>
+        <th>IBS</th>
+        {% if external_metrics[0] is defined %}
+          {% for key in external_metrics[0].keys() if key.startswith('brier@') %}
+            <th>{{ key }}</th>
+          {% endfor %}
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in external_metrics %}
+      <tr>
+        <td>{{ row.model }}</td>
+        <td>{{ '%.3f'|format(row.concordance) }}</td>
+        <td>{{ '%.3f'|format(row.ibs) }}</td>
+        {% for key, value in row.items() if key.startswith('brier@') %}
+          <td>{{ '%.3f'|format(value) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="figure-grid">
+    {% if calibration_figs.cv %}
+    <div class="figure">
+      <h3>Reliability – CV</h3>
+      <img src="{{ calibration_figs.cv }}" alt="Reliability CV" />
+    </div>
+    {% endif %}
+    {% if calibration_figs.external %}
+    <div class="figure">
+      <h3>Reliability – External</h3>
+      <img src="{{ calibration_figs.external }}" alt="Reliability External" />
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="figure-grid">
+    {% if decision_figs.cv %}
+    <div class="figure">
+      <h3>Decision Curve – CV</h3>
+      <img src="{{ decision_figs.cv }}" alt="Decision Curve CV" />
+    </div>
+    {% endif %}
+    {% if decision_figs.external %}
+    <div class="figure">
+      <h3>Decision Curve – External</h3>
+      <img src="{{ decision_figs.external }}" alt="Decision Curve External" />
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if shap_figs %}
+  <h2>Explainability</h2>
+  <div class="shap-gallery">
+    {% for fig in shap_figs %}
+      <img src="{{ fig }}" alt="Explainability figure" />
+    {% endfor %}
+  </div>
+  {% endif %}
+</body>
+</html>
