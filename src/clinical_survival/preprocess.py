@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import IterativeImputer, SimpleImputer
 from sklearn.pipeline import Pipeline

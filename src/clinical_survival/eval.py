@@ -47,7 +47,9 @@ class EvaluationResult:
     decision_path: Path
 
 
-def _km_censoring(times: NDArray[np.float64], events: NDArray[np.int_]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+def _km_censoring(
+    times: NDArray[np.float64], events: NDArray[np.int_]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Kaplan-Meier estimate of the censoring distribution G(t)."""
 
     order = np.argsort(times)
@@ -67,7 +69,9 @@ def _km_censoring(times: NDArray[np.float64], events: NDArray[np.int_]) -> tuple
     return unique_times, np.asarray(survivors)
 
 
-def _km_lookup(km_times: NDArray[np.float64], km_surv: NDArray[np.float64], query: NDArray[np.float64]) -> NDArray[np.float64]:
+def _km_lookup(
+    km_times: NDArray[np.float64], km_surv: NDArray[np.float64], query: NDArray[np.float64]
+) -> NDArray[np.float64]:
     return np.clip(np.interp(query, km_times, km_surv, left=1.0, right=km_surv[-1]), 1e-8, 1.0)
 
 
@@ -84,7 +88,9 @@ def _ipcw_weights(
     if np.any(mask_event):
         weights[mask_event] = 1.0 / _km_lookup(km_times, km_surv, times[mask_event])
     if np.any(mask_survive):
-        weights[mask_survive] = 1.0 / _km_lookup(km_times, km_surv, np.full(mask_survive.sum(), horizon))
+        weights[mask_survive] = 1.0 / _km_lookup(
+            km_times, km_surv, np.full(mask_survive.sum(), horizon)
+        )
     return weights
 
 
@@ -266,7 +272,9 @@ def compute_metrics(
         boot_metrics["ibs"].append(
             float(integrated_brier_score(surv_struct_boot, surv_struct_boot, surv_boot, times_arr))
         )
-        auc_boot, _ = cumulative_dynamic_auc(surv_struct_boot, surv_struct_boot, risk_boot, times_arr)
+        auc_boot, _ = cumulative_dynamic_auc(
+            surv_struct_boot, surv_struct_boot, risk_boot, times_arr
+        )
         for idx, t in enumerate(times_arr):
             boot_metrics[f"auc@{int(t)}"].append(float(auc_boot[idx]))
             brier_boot = brier_score(surv_struct_boot, surv_struct_boot, surv_boot[:, idx], t)[0]

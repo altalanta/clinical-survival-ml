@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  clinical-survival-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount configuration files
+      - ./configs:/workspace/configs:ro
+      # Mount results directory for model persistence
+      - ./results:/workspace/results
+      # Mount data directory (optional, for development)
+      - ./data:/workspace/data:ro
+    environment:
+      - PYTHONPATH=/workspace
+    command: ["serve", "--models-dir", "results/artifacts/models", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Optional: Training service (run separately)
+  clinical-survival-training:
+    build: .
+    volumes:
+      - ./configs:/workspace/configs:ro
+      - ./results:/workspace/results
+      - ./data:/workspace/data:ro
+    environment:
+      - PYTHONPATH=/workspace
+    profiles:
+      - training
+    command: ["run", "--config", "configs/params.yaml", "--grid", "configs/model_grid.yaml"]
+
+networks:
+  default:
+    name: clinical-survival-network

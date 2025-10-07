@@ -27,6 +27,8 @@ def test_net_benefit_ipcw_vs_reference():
 
     curves = decision_curve_ipcw(y, survival, [8.0], thresholds)
     for thr in thresholds:
-        nb = curves.loc[(curves["time"] == 8.0) & (curves["threshold"] == thr), "net_benefit"].iloc[0]
+        nb = curves.loc[(curves["time"] == 8.0) & (curves["threshold"] == thr), "net_benefit"].iloc[
+            0
+        ]
         manual = _manual_net_benefit(y, survival, 8.0, thr)
         assert np.isclose(nb, manual, atol=0.05)

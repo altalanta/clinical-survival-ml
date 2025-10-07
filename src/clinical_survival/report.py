@@ -29,7 +29,11 @@ def build_report(
     template_path = Path(template_path)
     leaderboard_path = Path(leaderboard_csv)
     leaderboard = pd.read_csv(leaderboard_path) if leaderboard_path.exists() else pd.DataFrame()
-    external_metrics = pd.read_csv(external_metrics_csv) if external_metrics_csv and Path(external_metrics_csv).exists() else pd.DataFrame()
+    external_metrics = (
+        pd.read_csv(external_metrics_csv)
+        if external_metrics_csv and Path(external_metrics_csv).exists()
+        else pd.DataFrame()
+    )
 
     env = Environment(
         loader=FileSystemLoader(str(template_path.parent)),

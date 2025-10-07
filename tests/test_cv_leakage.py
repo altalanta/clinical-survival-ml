@@ -12,7 +12,9 @@ from clinical_survival.tuning import nested_cv
 
 def _pipeline_factory(feature_spec, seed):
     def factory(params: dict[str, object]) -> PipelineModel:
-        transformer = build_preprocessor(feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=seed)
+        transformer = build_preprocessor(
+            feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=seed
+        )
         estimator = make_model("coxph", random_state=seed, **params)
         pipeline = Pipeline([("pre", transformer), ("est", estimator)])
         wrapped = PipelineModel(pipeline)
@@ -51,9 +53,13 @@ def test_nested_cv_no_prefit_state():
         pipeline_builder=factory,
     )
 
-    global_transformer = build_preprocessor(feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=123)
+    global_transformer = build_preprocessor(
+        feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=123
+    )
     global_transformer.fit(X)
-    global_stats = global_transformer.named_transformers_["numeric"].named_steps["impute"].statistics_
+    global_stats = (
+        global_transformer.named_transformers_["numeric"].named_steps["impute"].statistics_
+    )
 
     for fold in result.folds:
         fold_stats = fold.preprocessor_summary.get("numeric_imputer")
@@ -67,7 +73,9 @@ def test_pipeline_fits_inside_fold():
     fit_counts = {"count": 0}
 
     def factory(params: dict[str, object]) -> PipelineModel:
-        transformer = build_preprocessor(feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=7)
+        transformer = build_preprocessor(
+            feature_spec, {"strategy": "simple", "initial_strategy": "median"}, random_state=7
+        )
         estimator = make_model("coxph", random_state=7, **params)
         pipeline = Pipeline([("pre", transformer), ("est", estimator)])
         wrapped = PipelineModel(pipeline)

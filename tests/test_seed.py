@@ -13,7 +13,9 @@ from clinical_survival.tuning import nested_cv
 
 def _factory(feature_spec, seed):
     def factory(params: dict[str, object]) -> PipelineModel:
-        transformer = build_preprocessor(feature_spec, {"strategy": "iterative", "max_iter": 5}, random_state=seed)
+        transformer = build_preprocessor(
+            feature_spec, {"strategy": "iterative", "max_iter": 5}, random_state=seed
+        )
         estimator = make_model("coxph", random_state=seed, **params)
         pipeline = Pipeline([("pre", transformer), ("est", estimator)])
         wrapped = PipelineModel(pipeline)

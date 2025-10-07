@@ -18,7 +18,9 @@ def load_dataset(
     time_col: str = "time",
     event_col: str = "event",
     external_config: dict[str, object] | None = None,
-) -> tuple[tuple[pd.DataFrame, pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame] | None, dict[str, object]]:
+) -> tuple[
+    tuple[pd.DataFrame, pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame] | None, dict[str, object]
+]:
     """Load dataset and optional external validation split.
 
     Returns
@@ -53,7 +55,11 @@ def load_dataset(
         frames = [main_df, external_df]
     elif group_column in main_df.columns:
         mask_external = main_df[group_column].astype(str) == str(external_value)
-        mask_train = main_df[group_column].astype(str) == str(train_value) if train_value is not None else ~mask_external
+        mask_train = (
+            main_df[group_column].astype(str) == str(train_value)
+            if train_value is not None
+            else ~mask_external
+        )
         external_df = main_df[mask_external].copy()
         main_df = main_df[mask_train].copy()
         main_df["__split"] = "train"
@@ -67,11 +73,17 @@ def load_dataset(
     combined = pd.concat(frames, axis=0, ignore_index=True)
     combined = _apply_metadata_types(combined, metadata)
 
-    train_df = combined[combined["__split"] == "train"].drop(columns="__split").reset_index(drop=True)
+    train_df = (
+        combined[combined["__split"] == "train"].drop(columns="__split").reset_index(drop=True)
+    )
     external_split = None
     external_count = 0
     if "external" in combined["__split"].values:
-        ext_df = combined[combined["__split"] == "external"].drop(columns="__split").reset_index(drop=True)
+        ext_df = (
+            combined[combined["__split"] == "external"]
+            .drop(columns="__split")
+            .reset_index(drop=True)
+        )
         external_split = _split_features_target(ext_df, time_col, event_col, group_column)
         external_count = len(ext_df)
 
@@ -114,7 +126,9 @@ def _split_features_target(
     if missing_required:
         raise ValueError(f"Missing required columns: {missing_required}")
 
-    feature_df = df.drop(columns=[col for col in [time_col, event_col, group_col] if col in df.columns])
+    feature_df = df.drop(
+        columns=[col for col in [time_col, event_col, group_col] if col in df.columns]
+    )
     target_df = df[[time_col, event_col]].copy()
     target_df[event_col] = target_df[event_col].astype(int)
     target_df[time_col] = target_df[time_col].astype(float)

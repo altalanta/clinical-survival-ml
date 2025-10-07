@@ -60,7 +60,10 @@ def shap_summary(
     if not hasattr(model, "predict_risk"):
         return None
     data = X.iloc[:max_samples] if max_samples else X
-    explainer = shap.Explainer(lambda data_matrix: model.predict_risk(pd.DataFrame(data_matrix, columns=data.columns)), data.to_numpy())
+    explainer = shap.Explainer(
+        lambda data_matrix: model.predict_risk(pd.DataFrame(data_matrix, columns=data.columns)),
+        data.to_numpy(),
+    )
     shap_values = explainer(data.to_numpy())
     ensure_dir(output_path.parent)
     shap.plots.beeswarm(shap_values, show=False)
