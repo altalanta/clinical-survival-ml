@@ -119,9 +119,9 @@ def stratified_event_split(
     n_pos_test = int(len(positive) * test_size)
     n_neg_test = n_test - n_pos_test
 
-    test_df = pd.concat(
-        [positive.iloc[:n_pos_test], negative.iloc[:n_neg_test]], axis=0
-    ).sample(frac=1.0, random_state=seed)
+    test_df = pd.concat([positive.iloc[:n_pos_test], negative.iloc[:n_neg_test]], axis=0).sample(
+        frac=1.0, random_state=seed
+    )
     train_df = df.drop(test_df.index)
     return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
 

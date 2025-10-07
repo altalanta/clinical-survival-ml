@@ -17,7 +17,9 @@ except ImportError:  # pragma: no cover
     xgb = None
 
 
-def _breslow_survival(times: np.ndarray, events: np.ndarray, risks: np.ndarray, eval_times: np.ndarray) -> np.ndarray:
+def _breslow_survival(
+    times: np.ndarray, events: np.ndarray, risks: np.ndarray, eval_times: np.ndarray
+) -> np.ndarray:
     """Compute baseline survival using Breslow estimator."""
 
     order = np.argsort(times)
@@ -32,7 +34,9 @@ def _breslow_survival(times: np.ndarray, events: np.ndarray, risks: np.ndarray, 
     for idx, t in enumerate(unique_times):
         event_mask = (times == t) & (events == 1)
         risk_set = risks[times >= t]
-        hazard_increment = events[event_mask].sum() / np.clip(risk_set.sum(), a_min=1e-8, a_max=None)
+        hazard_increment = events[event_mask].sum() / np.clip(
+            risk_set.sum(), a_min=1e-8, a_max=None
+        )
         cumulative += hazard_increment
         baseline_hazard[idx] = cumulative
 
@@ -40,12 +44,16 @@ def _breslow_survival(times: np.ndarray, events: np.ndarray, risks: np.ndarray, 
     survival_at_eval = np.ones((len(risks), len(eval_times)))
 
     for j, r in enumerate(risks):
-        surv_values = np.interp(eval_times, unique_times, baseline_survival, left=1.0, right=baseline_survival[-1])
+        surv_values = np.interp(
+            eval_times, unique_times, baseline_survival, left=1.0, right=baseline_survival[-1]
+        )
         survival_at_eval[j, :] = np.power(surv_values, r)
     return survival_at_eval
 
 
-def _ensure_dataframe(X: pd.DataFrame | np.ndarray, columns: list[str] | None = None) -> pd.DataFrame:
+def _ensure_dataframe(
+    X: pd.DataFrame | np.ndarray, columns: list[str] | None = None
+) -> pd.DataFrame:
     if isinstance(X, pd.DataFrame):
         return X.copy()
     if columns is None:
@@ -60,7 +68,7 @@ class BaseSurvivalModel:
     model: object
     feature_names_: list[str] | None = None
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "BaseSurvivalModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> BaseSurvivalModel:
         raise NotImplementedError
 
     def predict_risk(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
@@ -79,7 +87,7 @@ class CoxPHModel(BaseSurvivalModel):
         super().__init__(CoxPHSurvivalAnalysis(**params))
         self._baseline_survival_: pd.DataFrame | None = None
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "CoxPHModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> CoxPHModel:
         frame = _ensure_dataframe(X)
         self.feature_names_ = list(frame.columns)
         self.model.fit(frame, y)
@@ -111,7 +119,7 @@ class RSFModel(BaseSurvivalModel):
         default_params.update(params)
         super().__init__(RandomSurvivalForest(**default_params))
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "RSFModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> RSFModel:
         frame = _ensure_dataframe(X)
         self.feature_names_ = list(frame.columns)
         self.model.fit(frame, y)
@@ -151,13 +159,20 @@ class XGBCoxModel(BaseSurvivalModel):
         self._train_time_: np.ndarray | None = None
         self._train_event_: np.ndarray | None = None
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "XGBCoxModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> XGBCoxModel:
         frame = _ensure_dataframe(X)
         times = np.asarray([record[1] for record in y], dtype=float)
         events = np.asarray([record[0] for record in y], dtype=float)
         self.feature_names_ = list(frame.columns)
-        dtrain = xgb.DMatrix(frame.to_numpy(), feature_names=self.feature_names_, label=times, weight=np.maximum(events, 1e-3))
-        self._booster = xgb.train(self.params, dtrain, num_boost_round=self.params.get("n_estimators", 200))
+        dtrain = xgb.DMatrix(
+            frame.to_numpy(),
+            feature_names=self.feature_names_,
+            label=times,
+            weight=np.maximum(events, 1e-3),
+        )
+        self._booster = xgb.train(
+            self.params, dtrain, num_boost_round=self.params.get("n_estimators", 200)
+        )
         self._train_time_ = times
         self._train_event_ = events
         self._train_risk_ = np.exp(self._booster.predict(dtrain))
@@ -173,7 +188,12 @@ class XGBCoxModel(BaseSurvivalModel):
     def predict_survival_function(
         self, X: pd.DataFrame | np.ndarray, times: Iterable[float]
     ) -> np.ndarray:
-        if self._booster is None or self._train_time_ is None or self._train_event_ is None or self._train_risk_ is None:
+        if (
+            self._booster is None
+            or self._train_time_ is None
+            or self._train_event_ is None
+            or self._train_risk_ is None
+        ):
             raise RuntimeError("Model not fitted")
         eval_times = np.asarray(list(times))
         frame = _ensure_dataframe(X, self.feature_names_)
@@ -205,7 +225,7 @@ class XGBAFTModel(BaseSurvivalModel):
         self._train_time_: np.ndarray | None = None
         self._train_event_: np.ndarray | None = None
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "XGBAFTModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> XGBAFTModel:
         frame = _ensure_dataframe(X)
         times = np.asarray([record[1] for record in y], dtype=float)
         events = np.asarray([record[0] for record in y], dtype=float)
@@ -215,7 +235,9 @@ class XGBAFTModel(BaseSurvivalModel):
         dtrain = xgb.DMatrix(frame.to_numpy(), feature_names=self.feature_names_)
         dtrain.set_float_info("label_lower_bound", lower)
         dtrain.set_float_info("label_upper_bound", upper)
-        self._booster = xgb.train(self.params, dtrain, num_boost_round=self.params.get("n_estimators", 300))
+        self._booster = xgb.train(
+            self.params, dtrain, num_boost_round=self.params.get("n_estimators", 300)
+        )
         self._train_time_ = times
         self._train_event_ = events
         return self
@@ -269,7 +291,7 @@ class PipelineModel(BaseSurvivalModel):
         self.pipeline = pipeline
         self._estimator_step = "est"
 
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> "PipelineModel":
+    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> PipelineModel:
         self.pipeline.fit(X, y)
         self._estimator = self.pipeline.named_steps[self._estimator_step]
         self._preprocessor = self.pipeline.named_steps.get("pre")
@@ -291,7 +313,9 @@ class PipelineModel(BaseSurvivalModel):
         return self._estimator.predict_survival_function(transformed, times)
 
 
-def make_model(name: str, *, random_state: int | None = None, **params: object) -> BaseSurvivalModel:
+def make_model(
+    name: str, *, random_state: int | None = None, **params: object
+) -> BaseSurvivalModel:
     """Factory method returning a survival model wrapper."""
 
     name = name.lower()

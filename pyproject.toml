@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools_scm[toml]>=7.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clinical-survival-ml"
+dynamic = ["version"]
+description = "Clinical outcomes survival modeling pipeline"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Clinical-Survival-ML Team" }
+]
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+  "scikit-survival>=0.21",
+  "lifelines>=0.27",
+  "xgboost>=1.7",
+  "shap>=0.43",
+  "pyyaml>=6.0",
+  "jinja2>=3.1",
+  "matplotlib>=3.7",
+  "seaborn>=0.12",
+  "fastapi>=0.100.0",
+  "uvicorn[standard]>=0.20.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "ruff>=0.5",
+  "black>=24.4",
+]
+
+[project.scripts]
+clinical-ml = "clinical_survival.cli.main:app"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "RUF"]
+ignore = ["E501", "S311"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["clinical_survival"]
+
+[tool.setuptools_scm]
+write_to = "src/clinical_survival/_version.py"

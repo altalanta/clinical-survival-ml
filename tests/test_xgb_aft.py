@@ -17,7 +17,13 @@ def test_survival_function_monotone_and_valid():
     events = rng.integers(0, 2, size=50)
     y = [(bool(e), float(t)) for e, t in zip(events, times, strict=True)]
 
-    model = XGBAFTModel(n_estimators=50, learning_rate=0.1, max_depth=2, aft_loss_distribution="logistic", aft_loss_distribution_scale=1.5)
+    model = XGBAFTModel(
+        n_estimators=50,
+        learning_rate=0.1,
+        max_depth=2,
+        aft_loss_distribution="logistic",
+        aft_loss_distribution_scale=1.5,
+    )
     model.fit(X, y)
 
     horizons = [5.0, 10.0, 25.0, 50.0, 100.0]

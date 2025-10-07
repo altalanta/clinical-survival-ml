@@ -4,14 +4,62 @@ Reproducible end-to-end survival modelling for tabular clinical outcomes. The to
 
 ## Quickstart
 
+### Automated Installation (Recommended)
+
+```bash
+# Clone the repository and run the automated installer
+make install
+# or manually:
+./install.sh
+```
+
+This will automatically handle dependency installation and package setup.
+
 ### Conda / mamba
 
 ```bash
 mamba env create -f env/environment.yml
 mamba activate clinical-survival-ml
-pip install -e .[dev]
+make install
 pre-commit install
 ```
+
+### Docker
+
+#### Quick Start with Docker Compose (Recommended)
+
+```bash
+# Build and start the API server
+make deploy-build
+make deploy-serve
+
+# Or use the deployment script directly
+./deploy.sh build
+./deploy.sh serve
+```
+
+#### Manual Docker Commands
+
+```bash
+# Build the image
+docker build -t clinical-survival-ml .
+
+# Run training
+docker run --rm -v $(pwd):/workspace clinical-survival-ml run \
+  --config configs/params.yaml --grid configs/model_grid.yaml
+
+# Start API server (after training)
+docker run -p 8000:8000 -v $(pwd)/results:/workspace/results \
+  clinical-survival-ml serve --models-dir results/artifacts/models
+```
+
+### Troubleshooting Installation
+
+If you encounter pip compatibility issues, the installer will automatically fall back to alternative methods:
+
+- **requirements.txt**: Uses a traditional requirements file for maximum compatibility
+- **Conda/Mamba**: Uses conda-forge packages when available
+- **Direct installation**: Installs the package without development dependencies
 
 Then run the toy workflow:
 
@@ -19,30 +67,68 @@ Then run the toy workflow:
 clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
 ```
 
-### Docker
+## Deployment & API
+
+After training models, you can deploy them as a REST API:
 
 ```bash
-docker build -t clinical-survival-ml .
-docker run --rm -v $(pwd):/workspace clinical-survival-ml run \
-  --config configs/params.yaml --grid configs/model_grid.yaml
+# Serve the trained models
+clinical-ml serve --models-dir results/artifacts/models
+
+# Access the API at http://localhost:8000
+# Interactive documentation at http://localhost:8000/docs
+```
+
+### API Endpoints
+
+- `GET /` - API information and available endpoints
+- `GET /health` - Health check
+- `GET /models` - List available models
+- `POST /predict` - Make survival predictions
+
+Example prediction request:
+
+```bash
+curl -X POST "http://localhost:8000/predict" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "features": {
+      "age": 65,
+      "sex": "male",
+      "sofa": 8
+    },
+    "time_horizons": [90, 180, 365]
+  }'
 ```
 
 ## Configuring Experiments
 
 - `configs/params.yaml` sets seeds, CV folds, evaluation time grid, missing-data strategy, and I/O paths.
 - `configs/model_grid.yaml` defines per-model hyperparameter grids.
-- `configs/features.yaml` teams numeric/categorical features and optional drop columns.
+- `configs/features.yaml` defines numeric/categorical features and optional drop columns.
+
+### Configuration Validation
+
+Before running experiments, validate your configuration files:
+
+```bash
+clinical-ml validate-config
+```
+
+This command checks that all configuration files conform to their expected schemas and provides helpful error messages for any issues. Run this before training to catch configuration problems early.
 
 Modify the dataset paths in `params.yaml` to target your clinical dataset (CSV) and accompanying `metadata.yaml` describing column types.
 
 ## CLI Commands
 
 ```
+clinical-ml validate-config --config configs/params.yaml --grid configs/model_grid.yaml --features configs/features.yaml
 clinical-ml load --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
 clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
 clinical-ml evaluate --config configs/params.yaml
 clinical-ml explain --config configs/params.yaml --model xgb_cox
 clinical-ml report --config configs/params.yaml --out results/report.html
+clinical-ml serve --models-dir results/artifacts/models
 clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
 ```
 
