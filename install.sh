@@ -56,3 +56,4 @@ pip install -e . || {
 }
 
 echo "✅ Installation complete!"
+

@@ -107,6 +107,28 @@ curl -X POST "http://localhost:8000/predict" \
 - `configs/model_grid.yaml` defines per-model hyperparameter grids.
 - `configs/features.yaml` defines numeric/categorical features and optional drop columns.
 
+### Ensemble Model Configuration
+
+Configure ensemble methods in `configs/model_grid.yaml`:
+
+```yaml
+# Stacking ensemble - combines multiple models with meta-learning
+stacking:
+  base_models: [["coxph", "rsf"], ["coxph", "rsf", "xgb_cox"]]
+  cv_folds: [3, 5]
+
+# Bagging ensemble - bootstrap aggregation for stability
+bagging:
+  base_model: ["rsf", "xgb_cox"]
+  n_estimators: [5, 10]
+  max_samples: [0.8, 1.0]
+
+# Dynamic ensemble - automatic model selection
+dynamic:
+  base_models: [["coxph", "rsf", "xgb_cox"]]
+  selection_method: ["performance", "diversity"]
+```
+
 ### Configuration Validation
 
 Before running experiments, validate your configuration files:
@@ -149,6 +171,10 @@ Running `clinical-ml run` populates `results/` with:
 
 - **Preprocessing** – Iterative imputation for numeric features, one-hot encoding for categorical, scaling for continuous covariates.
 - **Models** – Baseline Cox PH (scikit-survival), Random Survival Forest, XGBoost Cox and AFT.
+- **Ensemble Methods** – Advanced stacking, bagging, and dynamic model selection for improved accuracy:
+  - **Stacking**: Combines multiple models using meta-learning for optimal prediction
+  - **Bagging**: Bootstrap aggregation reduces overfitting and improves stability
+  - **Dynamic Selection**: Automatically selects the best models based on data characteristics
 - **Tuning** – Nested cross-validation with stratified outer/inner folds, scored by concordance and IBS.
 - **Evaluation** – Out-of-fold (OOF) Harrell's C-index, time-dependent Brier scores, integrated Brier score, IPCW calibration curves, and censoring-aware decision-curve net benefit.
 - **Explainability** – Permutation importance, SHAP (tree models), partial dependence plots.

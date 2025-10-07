@@ -313,10 +313,29 @@ def run_train_command(
 
     for model_name in params.get("models", []):
         typer.echo(f"Training {model_name} ...")
+
+        # Handle ensemble model names specially for logging
+        display_name = model_name
+        model_params = grid_config.get(model_name, {})
+        if model_name == "stacking" and "base_models" in model_params:
+            base_models = (
+                model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
+            )
+            display_name = f"{model_name}({'+'.join(base_models)})"
+        elif model_name == "bagging" and "base_model" in model_params:
+            base_model = model_params["base_model"][0] if model_params["base_model"] else "rsf"
+            display_name = f"{model_name}({base_model})"
+        elif model_name == "dynamic" and "base_models" in model_params:
+            base_models = (
+                model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
+            )
+            display_name = f"{model_name}({'+'.join(base_models)})"
+
         log_function_call(
             "nested_cv",
             {
                 "model": model_name,
+                "display_name": display_name,
                 "n_samples": len(X_train_features),
                 "n_splits": params.get("n_splits", 3),
                 "inner_splits": params.get("inner_splits", 2),
@@ -334,7 +353,7 @@ def run_train_command(
                 y_train_df[params["event_col"]],
                 params.get("n_splits", 3),
                 params.get("inner_splits", 2),
-                grid_config.get(model_name, {}),
+                model_params,
                 eval_times,
                 random_state=seed_value,
                 pipeline_builder=pipeline_factory,
@@ -342,6 +361,12 @@ def run_train_command(
         except Exception as e:
             log_error_with_context(e, f"training {model_name}")
             typer.echo(f"❌ Failed to train {model_name}: {e}")
+            # For ensemble models, provide more specific error guidance
+            if model_name in ["stacking", "bagging", "dynamic"]:
+                typer.echo(
+                    "💡 Tip: Check that base models are properly configured in model_grid.yaml"
+                )
+                typer.echo(f"   Current config: {model_params}")
             continue
 
         trained_models[model_name] = result.estimator
