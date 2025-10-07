@@ -16,6 +16,14 @@ try:  # pragma: no cover - optional dependency
 except ImportError:  # pragma: no cover
     xgb = None
 
+# Import ensemble methods
+try:
+    from clinical_survival.ensembles import BaggingEnsemble, DynamicEnsemble, StackingEnsemble
+except ImportError:  # pragma: no cover
+    BaggingEnsemble = None  # type: ignore
+    DynamicEnsemble = None  # type: ignore
+    StackingEnsemble = None  # type: ignore
+
 
 def _breslow_survival(
     times: np.ndarray, events: np.ndarray, risks: np.ndarray, eval_times: np.ndarray
@@ -336,4 +344,31 @@ def make_model(
         if random_state is not None:
             aft_params.setdefault("seed", random_state)
         return XGBAFTModel(**aft_params)
+
+    # Ensemble models
+    if name == "stacking":
+        if StackingEnsemble is None:
+            raise ImportError("Ensemble methods not available")
+        base_models_param = params.pop("base_models", ["coxph", "rsf"])
+        base_models = [
+            make_model(model_name, random_state=random_state) for model_name in base_models_param
+        ]
+        return StackingEnsemble(base_models, random_state=random_state, **params)
+
+    if name == "bagging":
+        if BaggingEnsemble is None:
+            raise ImportError("Ensemble methods not available")
+        base_model_name = params.pop("base_model", "rsf")
+        base_model = make_model(base_model_name, random_state=random_state)
+        return BaggingEnsemble(base_model, random_state=random_state, **params)
+
+    if name == "dynamic":
+        if DynamicEnsemble is None:
+            raise ImportError("Ensemble methods not available")
+        base_models_param = params.pop("base_models", ["coxph", "rsf", "xgb_cox"])
+        base_models = [
+            make_model(model_name, random_state=random_state) for model_name in base_models_param
+        ]
+        return DynamicEnsemble(base_models, random_state=random_state, **params)
+
     raise ValueError(f"Unknown model: {name}")

@@ -17,3 +17,17 @@ xgb_aft:
   max_depth: [3, 5]
   aft_loss_distribution: ["normal", "logistic"]
   aft_loss_distribution_scale: [1.0, 2.0]
+
+# Ensemble models
+stacking:
+  base_models: [["coxph", "rsf"], ["coxph", "rsf", "xgb_cox"]]
+  cv_folds: [3, 5]
+
+bagging:
+  base_model: ["rsf", "xgb_cox"]
+  n_estimators: [5, 10]
+  max_samples: [0.8, 1.0]
+
+dynamic:
+  base_models: [["coxph", "rsf", "xgb_cox"]]
+  selection_method: ["performance", "diversity"]

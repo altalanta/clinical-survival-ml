@@ -104,9 +104,9 @@ def run(
 
 @app.command()
 def serve(
-    models_dir: Path = typer.Option(
+    models_dir: Path = typer.Option(  # noqa: B008
         Path("results/artifacts/models"),
-        help="Directory containing trained models"
+        help="Directory containing trained models",
     ),
     config: Path
     | None = typer.Option(None, help="Configuration file for model metadata"),  # noqa: B008

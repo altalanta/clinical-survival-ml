@@ -23,6 +23,8 @@ models:
   - rsf
   - xgb_cox
   - xgb_aft
+  - stacking
+  - bagging
 explain:
   shap_samples: 200
   pdp_features: ["age", "sofa", "stage"]
