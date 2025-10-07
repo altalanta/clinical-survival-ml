@@ -64,8 +64,16 @@ Running `clinical-ml run` populates `results/` with:
 - **Preprocessing** – Iterative imputation for numeric features, one-hot encoding for categorical, scaling for continuous covariates.
 - **Models** – Baseline Cox PH (scikit-survival), Random Survival Forest, XGBoost Cox and AFT.
 - **Tuning** – Nested cross-validation with stratified outer/inner folds, scored by concordance and IBS.
-- **Evaluation** – Harrell's C-index, time-dependent Brier scores, integrated Brier score, reliability curves, decision-curve net benefit.
+- **Evaluation** – Out-of-fold (OOF) Harrell's C-index, time-dependent Brier scores, integrated Brier score, IPCW calibration curves, and censoring-aware decision-curve net benefit.
 - **Explainability** – Permutation importance, SHAP (tree models), partial dependence plots.
+
+## Evaluation Guarantees
+
+- The preprocessing pipeline (imputation, scaling, encoding) is refit inside every CV fold. No transformers are prefit on the full dataset prior to cross-validation.
+- Leaderboard metrics are computed exclusively from aggregated OOF predictions and include bootstrap confidence intervals.
+- External/holdout evaluation uses the trained model only for prediction; no training data is reused in metric computation.
+- Calibration and decision-curve analyses apply inverse probability of censoring weighting (IPCW) at the requested horizons, ensuring censoring-aware reliability and net-benefit estimates.
+- A single global seed controls NumPy, Python, scikit-learn, and XGBoost RNGs. Re-running with the same seed produces identical OOF metrics and artifacts.
 
 ## Testing & CI
 
