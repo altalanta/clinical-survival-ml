@@ -37,6 +37,7 @@ from clinical_survival.logging_utils import (
 )
 from clinical_survival.models import PipelineModel, make_model
 from clinical_survival.preprocess import build_preprocessor
+from clinical_survival.monitoring import ModelMonitor, PerformanceTracker
 from clinical_survival.report import build_report, load_best_model
 from clinical_survival.tuning import NestedCVResult, nested_cv
 from clinical_survival.utils import (
@@ -588,3 +589,289 @@ def run_run_command(config: Path, grid: Path) -> None:
     report_path = Path(params["paths"]["outdir"]) / "report.html"
     run_report_command(config=config, out=report_path)
     typer.echo(f"Pipeline completed -> {report_path}")
+
+
+def run_monitor_command(
+    config: Path,
+    data: Path,
+    meta: Path,
+    model_name: str | None = None,
+    batch_size: int = 100,
+    save_monitoring: bool = True,
+) -> None:
+    """Monitor model predictions for drift and performance."""
+    typer.echo("🔍 Monitoring model predictions for drift detection...")
+
+    # Load configuration and data
+    params = load_yaml(config)
+    train_split, _, _, _, feature_spec = _prepare_data(config)
+
+    X_train_raw, y_train_df = train_split
+    X_features, _ = prepare_features(X_train_raw, feature_spec)
+
+    # Load additional data for monitoring
+    if data != Path("data/toy/toy_survival.csv"):  # If not using default toy data
+        monitor_data = pd.read_csv(data)
+        if meta != Path("data/toy/metadata.yaml"):
+            # Apply metadata transformations if needed
+            pass
+        monitor_features, _ = prepare_features(monitor_data.drop(columns=["time", "event"]), feature_spec)
+        monitor_targets = monitor_data[["time", "event"]]
+    else:
+        # Use training data for demonstration
+        monitor_features = X_features
+        monitor_targets = y_train_df[["time", "event"]]
+
+    # Initialize monitor
+    models_dir = Path(params["paths"]["outdir"]) / "artifacts" / "models"
+    monitor = ModelMonitor(models_dir)
+
+    # Load existing monitoring data
+    monitor.load_monitoring_data()
+
+    # Determine which model to monitor
+    if model_name is None:
+        # Find best model from leaderboard
+        leaderboard_path = Path(params["paths"]["outdir"]) / "artifacts" / "metrics" / "leaderboard.csv"
+        if leaderboard_path.exists():
+            leaderboard = pd.read_csv(leaderboard_path)
+            model_name = leaderboard.loc[leaderboard["concordance"].idxmax(), "model"]
+        else:
+            model_name = "coxph"  # Default fallback
+
+    typer.echo(f"📊 Monitoring model: {model_name}")
+
+    # Process data in batches for monitoring
+    n_samples = len(monitor_features)
+    n_batches = (n_samples + batch_size - 1) // batch_size
+
+    for i in range(n_batches):
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, n_samples)
+
+        batch_features = monitor_features.iloc[start_idx:end_idx]
+        batch_targets = monitor_targets.iloc[start_idx:end_idx]
+
+        typer.echo(f"  Processing batch {i + 1}/{n_batches} ({len(batch_features)} samples)")
+
+        try:
+            # Load model for prediction
+            model_path = models_dir / model_name / "pipeline.joblib"
+            if not model_path.exists():
+                typer.echo(f"❌ Model {model_name} not found at {model_path}")
+                continue
+
+            import joblib
+            pipeline = joblib.load(model_path)
+            model = pipeline.named_steps["est"]
+
+            # Make predictions
+            risk_pred = model.predict_risk(batch_features)
+
+            # For survival predictions, we'd need time horizons from config
+            eval_times = params.get("calibration", {}).get("times_days", [365])
+            survival_pred = model.predict_survival_function(batch_features, eval_times)
+
+            # Record monitoring metrics
+            metrics = monitor.record_metrics(
+                model_name=model_name,
+                X=batch_features,
+                y_true=batch_targets,
+                y_pred=risk_pred,
+                survival_pred=survival_pred,
+                eval_times=eval_times,
+            )
+
+            # Show current metrics
+            typer.echo(f"    Concordance: {metrics.concordance".3f"}")
+            typer.echo(f"    Brier Score: {metrics.brier_score".3f"}")
+
+            if metrics.drift_scores:
+                max_drift = max(metrics.drift_scores.values())
+                typer.echo(f"    Max Drift Score: {max_drift".3f"}")
+
+        except Exception as e:
+            typer.echo(f"❌ Error monitoring batch {i + 1}: {e}")
+            continue
+
+    # Save monitoring data if requested
+    if save_monitoring:
+        monitor.save_monitoring_data()
+        typer.echo("💾 Monitoring data saved")
+
+    # Show recent alerts
+    recent_alerts = monitor.get_recent_alerts(model_name, days=1)
+    if recent_alerts:
+        typer.echo(f"\n🚨 Recent alerts for {model_name}:")
+        for alert in recent_alerts:
+            typer.echo(f"  [{alert.severity.upper()}] {alert.alert_type}: {alert.message}")
+    else:
+        typer.echo(f"\n✅ No recent alerts for {model_name}")
+
+
+def run_drift_command(
+    config: Path,
+    model_name: str | None = None,
+    days: int = 7,
+    show_details: bool = False,
+) -> None:
+    """Check for model drift and performance degradation."""
+    typer.echo("🔍 Checking for model drift and performance issues...")
+
+    params = load_yaml(config)
+    models_dir = Path(params["paths"]["outdir"]) / "artifacts" / "models"
+
+    # Initialize monitor
+    monitor = ModelMonitor(models_dir)
+    monitor.load_monitoring_data()
+
+    # Determine which model to check
+    if model_name is None:
+        # Check all models with monitoring data
+        models_to_check = [model for model in monitor.metrics_history.keys()]
+    else:
+        models_to_check = [model_name] if model_name in monitor.metrics_history else []
+
+    if not models_to_check:
+        typer.echo("❌ No monitoring data found. Run monitoring first.")
+        return
+
+    # Check each model for drift and performance issues
+    for model in models_to_check:
+        typer.echo(f"\n📊 Model: {model}")
+
+        # Get performance summary
+        summary = monitor.get_performance_summary(model, days=days)
+
+        if "error" in summary:
+            typer.echo(f"  ❌ {summary['error']}")
+            continue
+
+        # Show key metrics
+        typer.echo(f"  Observations: {summary['n_observations']}")
+        typer.echo(f"  Samples: {summary['total_samples']}")
+        typer.echo(f"  Concordance: {summary['concordance']['mean']".3f"} ± {summary['concordance']['std']".3f"}")
+
+        if "brier_score" in summary:
+            typer.echo(f"  Brier Score: {summary['brier_score']['mean']".3f"} ± {summary['brier_score']['std']".3f"}")
+
+        # Show trend
+        concordance_trend = summary["concordance"]["trend"]
+        trend_emoji = {"improving": "📈", "degrading": "📉", "stable": "➡️"}.get(concordance_trend, "❓")
+        typer.echo(f"  Trend: {trend_emoji} {concordance_trend}")
+
+        # Show drift scores
+        if "latest_drift_scores" in summary:
+            drift_scores = summary["latest_drift_scores"]
+            if drift_scores:
+                max_drift = max(drift_scores.values())
+                typer.echo(f"  Max Drift Score: {max_drift".3f"}")
+
+                if show_details:
+                    for feature, score in sorted(drift_scores.items(), key=lambda x: x[1], reverse=True)[:5]:
+                        typer.echo(f"    {feature}: {score".3f"}")
+
+        # Show alerts
+        alert_count = summary.get("latest_alerts", 0)
+        if alert_count > 0:
+            typer.echo(f"  🚨 Active alerts: {alert_count}")
+
+        # Recommendations
+        if concordance_trend == "degrading" or (summary.get("brier_score", {}).get("trend") == "degrading"):
+            typer.echo("  💡 Recommendation: Consider model retraining")
+        elif max_drift > 0.2 if "latest_drift_scores" in summary else False:
+            typer.echo("  💡 Recommendation: Review data collection process")
+        else:
+            typer.echo("  ✅ Model performance appears stable")
+
+
+def run_monitoring_status_command(config: Path) -> None:
+    """Show overall monitoring status for all models."""
+    typer.echo("📊 Monitoring Status Dashboard")
+    typer.echo("=" * 40)
+
+    params = load_yaml(config)
+    models_dir = Path(params["paths"]["outdir"]) / "artifacts" / "models"
+
+    # Initialize monitor
+    monitor = ModelMonitor(models_dir)
+    monitor.load_monitoring_data()
+
+    if not monitor.metrics_history:
+        typer.echo("❌ No monitoring data available")
+        typer.echo("💡 Run 'clinical-ml monitor' to start monitoring model predictions")
+        return
+
+    # Show summary for each model
+    for model_name in monitor.metrics_history.keys():
+        summary = monitor.get_performance_summary(model_name, days=7)
+
+        if "error" not in summary:
+            status_emoji = "✅"
+            if summary["concordance"]["trend"] == "degrading":
+                status_emoji = "⚠️"
+            elif summary.get("brier_score", {}).get("trend") == "degrading":
+                status_emoji = "⚠️"
+
+            typer.echo(f"\n{status_emoji} {model_name}")
+            typer.echo(f"  Concordance: {summary['concordance']['mean']".3f"}")
+            typer.echo(f"  Trend: {summary['concordance']['trend']}")
+            typer.echo(f"  Observations: {summary['n_observations']}")
+
+            # Show recent alerts
+            recent_alerts = monitor.get_recent_alerts(model_name, days=1)
+            if recent_alerts:
+                typer.echo(f"  Alerts: {len(recent_alerts)}")
+
+    # Show overall alerts
+    all_alerts = monitor.get_recent_alerts(days=7)
+    if all_alerts:
+        typer.echo(f"\n🚨 Total active alerts: {len(all_alerts)}")
+
+        # Group by severity
+        severity_counts = {}
+        for alert in all_alerts:
+            severity_counts[alert.severity] = severity_counts.get(alert.severity, 0) + 1
+
+        for severity, count in severity_counts.items():
+            emoji = {"low": "🟡", "medium": "🟠", "high": "🔴", "critical": "🚨"}.get(severity, "❓")
+            typer.echo(f"  {emoji} {severity.capitalize()}: {count}")
+
+
+def run_reset_monitoring_command(
+    config: Path,
+    model_name: str | None = None,
+    confirm: bool = False,
+) -> None:
+    """Reset monitoring baselines for a model or all models."""
+    if not confirm:
+        typer.echo("⚠️  This will reset all monitoring baselines and historical data.")
+        typer.echo("💡 Use --confirm to proceed with the reset.")
+        return
+
+    typer.echo("🔄 Resetting monitoring baselines...")
+
+    params = load_yaml(config)
+    models_dir = Path(params["paths"]["outdir"]) / "artifacts" / "models"
+
+    # Initialize monitor
+    monitor = ModelMonitor(models_dir)
+    monitor.load_monitoring_data()
+
+    # Reset baselines
+    monitor.reset_baseline(model_name)
+
+    # Clear monitoring data if resetting all models
+    if model_name is None:
+        monitor.metrics_history.clear()
+        monitor.alerts.clear()
+
+    # Save changes
+    monitor.save_monitoring_data()
+
+    typer.echo("✅ Monitoring baselines reset successfully")
+
+    if model_name:
+        typer.echo(f"💡 Start fresh monitoring for {model_name} with new baseline data")
+    else:
+        typer.echo("💡 All monitoring data cleared. Start fresh monitoring for all models")

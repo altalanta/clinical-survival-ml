@@ -28,6 +28,14 @@ models:
 explain:
   shap_samples: 200
   pdp_features: ["age", "sofa", "stage"]
+monitoring:
+  alert_thresholds:
+    concordance_drop: 0.05
+    brier_increase: 0.02
+    feature_drift: 0.1
+    concept_drift: 0.15
+  baseline_window_days: 7
+  max_history_records: 1000
 paths:
   data_csv: "data/toy/toy_survival.csv"
   metadata: "data/toy/metadata.yaml"

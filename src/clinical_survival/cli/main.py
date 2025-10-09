@@ -7,10 +7,14 @@ from pathlib import Path
 import typer
 
 from clinical_survival.cli.commands import (
+    run_drift_command,
     run_evaluate_command,
     run_explain_command,
     run_load_command,
+    run_monitor_command,
+    run_monitoring_status_command,
     run_report_command,
+    run_reset_monitoring_command,
     run_run_command,
     run_train_command,
     run_validate_config_command,
@@ -124,6 +128,48 @@ def serve(
     except Exception as e:
         typer.echo(f"❌ Failed to start server: {e}")
         raise typer.Exit(1) from e
+
+
+@app.command()
+def monitor(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), help="Data file for monitoring"),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), help="Metadata file"),  # noqa: B008
+    model_name: str | None = typer.Option(None, help="Specific model to monitor"),
+    batch_size: int = typer.Option(100, help="Batch size for processing"),
+    save_monitoring: bool = typer.Option(True, help="Save monitoring data to disk"),
+) -> None:
+    """Monitor model predictions for drift and performance issues."""
+    run_monitor_command(config, data, meta, model_name, batch_size, save_monitoring)
+
+
+@app.command()
+def drift(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    model_name: str | None = typer.Option(None, help="Specific model to check"),
+    days: int = typer.Option(7, help="Number of days to analyze"),
+    show_details: bool = typer.Option(False, help="Show detailed drift information"),
+) -> None:
+    """Check for model drift and performance degradation."""
+    run_drift_command(config, model_name, days, show_details)
+
+
+@app.command()
+def monitoring_status(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+) -> None:
+    """Show monitoring status dashboard for all models."""
+    run_monitoring_status_command(config)
+
+
+@app.command()
+def reset_monitoring(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    model_name: str | None = typer.Option(None, help="Specific model to reset (or all if not specified)"),
+    confirm: bool = typer.Option(False, help="Confirm the reset operation"),
+) -> None:
+    """Reset monitoring baselines and historical data."""
+    run_reset_monitoring_command(config, model_name, confirm)
 
 
 if __name__ == "__main__":  # pragma: no cover

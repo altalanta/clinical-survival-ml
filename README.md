@@ -127,6 +127,31 @@ bagging:
 dynamic:
   base_models: [["coxph", "rsf", "xgb_cox"]]
   selection_method: ["performance", "diversity"]
+
+### Model Monitoring
+
+Monitor model performance and detect drift:
+
+```bash
+# Monitor model predictions for drift detection
+clinical-ml monitor --config configs/params.yaml --data data/new_data.csv
+
+# Check for drift and performance issues
+clinical-ml drift --config configs/params.yaml --model coxph --days 7
+
+# View monitoring status dashboard
+clinical-ml monitoring-status --config configs/params.yaml
+
+# Reset monitoring baselines
+clinical-ml reset-monitoring --config configs/params.yaml --confirm
+```
+
+The monitoring system tracks:
+- **Performance metrics** (concordance, Brier score) over time
+- **Feature drift** using statistical tests (Jensen-Shannon divergence)
+- **Data quality** indicators (missing rates, distribution changes)
+- **Automated alerts** for performance degradation or significant drift
+- **Trend analysis** for long-term model reliability assessment
 ```
 
 ### Configuration Validation
@@ -148,6 +173,9 @@ clinical-ml validate-config --config configs/params.yaml --grid configs/model_gr
 clinical-ml load --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
 clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
 clinical-ml evaluate --config configs/params.yaml
+clinical-ml monitor --config configs/params.yaml --data data/toy/toy_survival.csv
+clinical-ml drift --config configs/params.yaml --model coxph --days 7
+clinical-ml monitoring-status --config configs/params.yaml
 clinical-ml explain --config configs/params.yaml --model xgb_cox
 clinical-ml report --config configs/params.yaml --out results/report.html
 clinical-ml serve --models-dir results/artifacts/models
@@ -175,6 +203,11 @@ Running `clinical-ml run` populates `results/` with:
   - **Stacking**: Combines multiple models using meta-learning for optimal prediction
   - **Bagging**: Bootstrap aggregation reduces overfitting and improves stability
   - **Dynamic Selection**: Automatically selects the best models based on data characteristics
+- **Model Monitoring** – Real-time drift detection and performance tracking:
+  - **Concept Drift Detection**: Statistical tests for changes in prediction distributions
+  - **Data Quality Monitoring**: Feature distribution and missing data pattern tracking
+  - **Performance Alerts**: Automated notifications for model degradation
+  - **Baseline Management**: Historical performance comparison and trend analysis
 - **Tuning** – Nested cross-validation with stratified outer/inner folds, scored by concordance and IBS.
 - **Evaluation** – Out-of-fold (OOF) Harrell's C-index, time-dependent Brier scores, integrated Brier score, IPCW calibration curves, and censoring-aware decision-curve net benefit.
 - **Explainability** – Permutation importance, SHAP (tree models), partial dependence plots.
