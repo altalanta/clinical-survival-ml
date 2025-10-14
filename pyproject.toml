@@ -34,6 +34,9 @@ dev = [
   "ruff>=0.5",
   "black>=24.4",
 ]
+automl = [
+  "optuna>=3.0",
+]
 
 [project.scripts]
 clinical-ml = "clinical_survival.cli.main:app"

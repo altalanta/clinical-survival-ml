@@ -166,12 +166,228 @@ This command checks that all configuration files conform to their expected schem
 
 Modify the dataset paths in `params.yaml` to target your clinical dataset (CSV) and accompanying `metadata.yaml` describing column types.
 
+## Automated Model Selection (AutoML)
+
+The toolkit includes advanced automated machine learning capabilities for optimal model selection and hyperparameter tuning:
+
+### AutoML Features
+
+- **Bayesian Optimization**: Uses Optuna for intelligent hyperparameter search
+- **Multi-Model Selection**: Automatically compares Cox PH, RSF, XGBoost Cox/AFT, and ensemble models
+- **Early Stopping**: Stops optimization when no improvement is detected
+- **Cross-Validation**: Proper evaluation during optimization to prevent overfitting
+
+### Installation for AutoML
+
+```bash
+# Install with AutoML dependencies
+pip install clinical-survival-ml[automl]
+
+# Or install optuna separately
+pip install optuna>=3.0
+```
+
+### AutoML Usage
+
+```bash
+# Run automated optimization for 30 minutes
+clinical-ml automl --config configs/params.yaml \
+                   --data data/toy/toy_survival.csv \
+                   --meta data/toy/metadata.yaml \
+                   --time-limit 1800 \
+                   --model-types coxph rsf xgb_cox xgb_aft stacking
+
+# Optimize for specific models only
+clinical-ml automl --config configs/params.yaml \
+                   --data data/your_data.csv \
+                   --meta data/metadata.yaml \
+                   --time-limit 3600 \
+                   --model-types xgb_cox xgb_aft \
+                   --metric concordance \
+                   --output-dir results/automl
+
+# Use different optimization metric
+clinical-ml automl --config configs/params.yaml \
+                   --data data/your_data.csv \
+                   --meta data/metadata.yaml \
+                   --time-limit 1800 \
+                   --metric ibs
+```
+
+### AutoML Outputs
+
+The AutoML command generates:
+- `results/automl/automl_results.json`: Best model parameters and performance
+- `results/automl/optuna_study.pkl`: Complete optimization study for analysis
+- `results/automl/best_model.pkl`: Trained best model ready for deployment
+
+## GPU Acceleration & Performance
+
+The toolkit includes intelligent GPU acceleration for XGBoost models with automatic hardware detection:
+
+### Hardware Detection
+
+```bash
+# Check hardware capabilities and benchmark performance
+clinical-ml benchmark-hardware --config configs/params.yaml \
+                               --data data/toy/toy_survival.csv \
+                               --meta data/toy/metadata.yaml \
+                               --model-type xgb_cox
+
+# Test specific GPU device
+clinical-ml benchmark-hardware --config configs/params.yaml \
+                               --data data/your_data.csv \
+                               --meta data/metadata.yaml \
+                               --model-type xgb_aft \
+                               --gpu-id 1
+```
+
+### Automatic GPU Usage
+
+- **Auto-detection**: Automatically detects CUDA-compatible GPUs
+- **Intelligent Fallback**: Falls back to CPU parallel processing when GPU unavailable
+- **Multi-GPU Support**: Can utilize multiple GPUs when available
+- **Performance Monitoring**: Benchmarks both CPU and GPU performance for optimal configuration
+
+### GPU Features
+
+- **XGBoost GPU Support**: Uses `tree_method="gpu_hist"` for XGBoost models
+- **Parallel Processing**: Leverages all available CPU cores when GPU unavailable
+- **Memory Management**: Efficient memory usage for large datasets
+- **Hardware Recommendations**: Provides guidance on optimal hardware configuration
+
+### Performance Benefits
+
+- **5-10x speedup** for XGBoost model training on GPU-equipped systems
+- **Parallel cross-validation** for faster hyperparameter optimization
+- **Scalable to large datasets** with efficient memory management
+- **Future-ready** for deep learning survival models
+
+## Counterfactual Explanations & Causal Inference
+
+The toolkit includes advanced counterfactual explanation capabilities for generating actionable clinical insights:
+
+### What are Counterfactual Explanations?
+
+Counterfactual explanations answer the question: **"What would need to change for this patient to achieve a different outcome?"**
+
+For example:
+- "What changes in patient characteristics would reduce their risk from 0.7 to 0.3?"
+- "What interventions would extend survival time from 6 months to 12 months?"
+
+### Counterfactual Features
+
+- **🎯 Multiple Optimization Methods**: Gradient descent, genetic algorithms, and random search
+- **📏 Distance Constraints**: Control how different counterfactuals can be from original instances
+- **🎛️ Flexible Targets**: Target specific risk levels or survival times
+- **🔬 Causal Inference**: Treatment effect estimation and feature importance analysis
+- **📊 Actionable Insights**: Clear visualization of required changes for clinicians
+
+### Counterfactual Usage
+
+```bash
+# Generate counterfactuals for a specific risk target
+clinical-ml counterfactual --config configs/params.yaml \
+                          --data data/toy/toy_survival.csv \
+                          --meta data/toy/metadata.yaml \
+                          --model xgb_cox \
+                          --target-risk 0.3 \
+                          --n-counterfactuals 3
+
+# Generate counterfactuals for survival time target
+clinical-ml counterfactual --config configs/params.yaml \
+                          --data data/your_data.csv \
+                          --meta data/metadata.yaml \
+                          --model rsf \
+                          --target-time 365 \
+                          --method genetic
+
+# Generate multiple counterfactuals with different methods
+clinical-ml counterfactual --config configs/params.yaml \
+                          --data data/your_data.csv \
+                          --meta data/metadata.yaml \
+                          --model xgb_aft \
+                          --n-counterfactuals 5 \
+                          --output-dir results/counterfactuals
+```
+
+### Counterfactual Methods
+
+1. **Gradient-based Optimization**: Fast, deterministic optimization using gradients
+2. **Genetic Algorithm**: Population-based evolutionary approach for complex optimization landscapes
+3. **Random Search**: Simple but effective baseline method
+
+### Counterfactual Outputs
+
+The counterfactual command generates:
+- `results/counterfactuals/counterfactual_results.json`: Complete explanation data
+- **Interactive Display**: Shows original prediction, target outcomes, and required changes
+- **Feature Changes**: Detailed breakdown of what needs to change and by how much
+- **Distance Metrics**: Quantifies how different counterfactuals are from original instances
+
+### Example Counterfactual Output
+
+```
+🔍 Generating Counterfactual Explanations
+==================================================
+🎯 Model: xgb_cox
+🔢 Counterfactuals: 3
+⚙️  Method: gradient
+📊 Target risk: 0.3
+
+✅ Counterfactual generation completed!
+📈 Original risk: 0.65
+
+🎯 Generated 3 counterfactuals:
+
+  1. Target risk: 0.30
+     Distance: 1.23
+     Key changes:
+       age: ↓ 5.2 years
+       sofa: ↓ 2.1 points
+       stage: ↓ 0.8 levels
+
+  2. Target risk: 0.30
+     Distance: 0.89
+     Key changes:
+       creatinine: ↓ 0.3 mg/dL
+       bilirubin: ↓ 1.1 mg/dL
+
+📊 Summary:
+   Total counterfactuals: 3
+   Average distance: 1.05
+   Min/Max distance: 0.89 / 1.23
+
+💾 Results saved to results/counterfactuals/counterfactual_results.json
+🎉 Counterfactual explanation generation completed!
+```
+
+### Causal Inference Capabilities
+
+```python
+from clinical_survival.counterfactual import CausalInference
+
+# Estimate treatment effects
+causal_analyzer = CausalInference(model, feature_names, treatment_features=['treatment'])
+treatment_effects = causal_analyzer.estimate_treatment_effect(
+    X_test, 'treatment', [0, 1], outcome_type='risk'
+)
+
+# Feature importance for causal understanding
+importance = causal_analyzer.feature_importance_causal(
+    X_test, outcome_type='risk', method='shap'
+)
+```
+
 ## CLI Commands
 
 ```
 clinical-ml validate-config --config configs/params.yaml --grid configs/model_grid.yaml --features configs/features.yaml
 clinical-ml load --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
 clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+clinical-ml automl --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml --time-limit 1800
+clinical-ml benchmark-hardware --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
+clinical-ml counterfactual --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml --model xgb_cox --target-risk 0.3
 clinical-ml evaluate --config configs/params.yaml
 clinical-ml monitor --config configs/params.yaml --data data/toy/toy_survival.csv
 clinical-ml drift --config configs/params.yaml --model coxph --days 7
@@ -209,7 +425,10 @@ Running `clinical-ml run` populates `results/` with:
   - **Performance Alerts**: Automated notifications for model degradation
   - **Baseline Management**: Historical performance comparison and trend analysis
 - **Tuning** – Nested cross-validation with stratified outer/inner folds, scored by concordance and IBS.
+- **AutoML** – Automated model selection and Bayesian hyperparameter optimization using Optuna for finding optimal model architectures and parameters.
+- **GPU Acceleration** – Automatic GPU detection and acceleration for XGBoost models, with intelligent fallback to CPU parallel processing.
 - **Evaluation** – Out-of-fold (OOF) Harrell's C-index, time-dependent Brier scores, integrated Brier score, IPCW calibration curves, and censoring-aware decision-curve net benefit.
+- **Counterfactual Explanations** – Generate "what-if" scenarios showing minimal feature changes needed to achieve different outcomes, enabling actionable clinical decision support.
 - **Explainability** – Permutation importance, SHAP (tree models), partial dependence plots.
 
 ## Evaluation Guarantees
