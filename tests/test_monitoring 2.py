@@ -292,4 +292,3 @@ def test_monitoring_edge_cases():
         except Exception:
             # Expected to fail with empty data
             pass
-

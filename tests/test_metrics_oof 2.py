@@ -4,7 +4,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
-from sksurv.metrics import brier_score, concordance_index_censored, cumulative_dynamic_auc, integrated_brier_score
+from sksurv.metrics import (
+    brier_score,
+    concordance_index_censored,
+    cumulative_dynamic_auc,
+    integrated_brier_score,
+)
 from sksurv.util import Surv
 
 from clinical_survival.eval import compute_metrics
@@ -15,10 +20,12 @@ from clinical_survival.tuning import nested_cv
 
 def _dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series, dict[str, list[str]]]:
     rng = np.random.default_rng(0)
-    X = pd.DataFrame({
-        "x1": rng.normal(size=40),
-        "x2": rng.normal(size=40),
-    })
+    X = pd.DataFrame(
+        {
+            "x1": rng.normal(size=40),
+            "x2": rng.normal(size=40),
+        }
+    )
     time = pd.Series(rng.integers(5, 50, size=40), name="time")
     event = pd.Series(rng.integers(0, 2, size=40), name="event")
     feature_spec = {"numeric": ["x1", "x2"], "categorical": []}
@@ -27,7 +34,9 @@ def _dataset() -> tuple[pd.DataFrame, pd.Series, pd.Series, dict[str, list[str]]
 
 def _factory(feature_spec, seed):
     def factory(params: dict[str, object]) -> PipelineModel:
-        transformer = build_preprocessor(feature_spec, {"strategy": "iterative", "max_iter": 5}, random_state=seed)
+        transformer = build_preprocessor(
+            feature_spec, {"strategy": "iterative", "max_iter": 5}, random_state=seed
+        )
         estimator = make_model("rsf", random_state=seed, **params)
         pipeline = Pipeline([("pre", transformer), ("est", estimator)])
         wrapped = PipelineModel(pipeline)

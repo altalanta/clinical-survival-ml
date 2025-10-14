@@ -24,13 +24,6 @@ except ImportError:  # pragma: no cover
     DynamicEnsemble = None  # type: ignore
     StackingEnsemble = None  # type: ignore
 
-# Import GPU utilities
-try:
-    from clinical_survival.gpu_utils import create_gpu_accelerator
-    GPU_UTILS_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    GPU_UTILS_AVAILABLE = False
-
 
 def _breslow_survival(
     times: np.ndarray, events: np.ndarray, risks: np.ndarray, eval_times: np.ndarray
@@ -154,17 +147,11 @@ class RSFModel(BaseSurvivalModel):
 
 
 class XGBCoxModel(BaseSurvivalModel):
-    """XGBoost-based Cox model with GPU acceleration."""
+    """XGBoost-based Cox model."""
 
-    def __init__(self, use_gpu: bool = True, gpu_id: int = 0, **params: object) -> None:
+    def __init__(self, **params: object) -> None:
         if xgb is None:  # pragma: no cover
             raise ImportError("xgboost is required for XGBCoxModel")
-
-        # Initialize GPU accelerator
-        self.gpu_accelerator = None
-        if GPU_UTILS_AVAILABLE and use_gpu:
-            self.gpu_accelerator = create_gpu_accelerator(use_gpu=use_gpu, gpu_id=gpu_id)
-
         default_params = {
             "objective": "survival:cox",
             "eval_metric": "cox-nloglik",
@@ -172,12 +159,6 @@ class XGBCoxModel(BaseSurvivalModel):
             "learning_rate": 0.05,
             "max_depth": 3,
         }
-
-        # Add GPU parameters if available
-        if self.gpu_accelerator is not None:
-            gpu_params = self.gpu_accelerator.get_gpu_params("xgb")
-            default_params.update(gpu_params)
-
         default_params.update(params)
         self.params = default_params
         super().__init__(None)
@@ -185,7 +166,6 @@ class XGBCoxModel(BaseSurvivalModel):
         self._train_risk_: np.ndarray | None = None
         self._train_time_: np.ndarray | None = None
         self._train_event_: np.ndarray | None = None
-        self.use_gpu = use_gpu
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> XGBCoxModel:
         frame = _ensure_dataframe(X)
@@ -232,17 +212,11 @@ class XGBCoxModel(BaseSurvivalModel):
 
 
 class XGBAFTModel(BaseSurvivalModel):
-    """XGBoost accelerated failure time model with GPU acceleration."""
+    """XGBoost accelerated failure time model."""
 
-    def __init__(self, use_gpu: bool = True, gpu_id: int = 0, **params: object) -> None:
+    def __init__(self, **params: object) -> None:
         if xgb is None:  # pragma: no cover
             raise ImportError("xgboost is required for XGBAFTModel")
-
-        # Initialize GPU accelerator
-        self.gpu_accelerator = None
-        if GPU_UTILS_AVAILABLE and use_gpu:
-            self.gpu_accelerator = create_gpu_accelerator(use_gpu=use_gpu, gpu_id=gpu_id)
-
         default_params = {
             "objective": "survival:aft",
             "eval_metric": "aft-nloglik",
@@ -252,19 +226,12 @@ class XGBAFTModel(BaseSurvivalModel):
             "aft_loss_distribution": "normal",
             "aft_loss_distribution_scale": 1.0,
         }
-
-        # Add GPU parameters if available
-        if self.gpu_accelerator is not None:
-            gpu_params = self.gpu_accelerator.get_gpu_params("xgb")
-            default_params.update(gpu_params)
-
         default_params.update(params)
         self.params = default_params
         super().__init__(None)
         self._booster: xgb.Booster | None = None
         self._train_time_: np.ndarray | None = None
         self._train_event_: np.ndarray | None = None
-        self.use_gpu = use_gpu
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> XGBAFTModel:
         frame = _ensure_dataframe(X)
@@ -355,9 +322,9 @@ class PipelineModel(BaseSurvivalModel):
 
 
 def make_model(
-    name: str, *, random_state: int | None = None, use_gpu: bool = True, gpu_id: int = 0, **params: object
+    name: str, *, random_state: int | None = None, **params: object
 ) -> BaseSurvivalModel:
-    """Factory method returning a survival model wrapper with GPU support."""
+    """Factory method returning a survival model wrapper."""
 
     name = name.lower()
     if name == "coxph":
@@ -371,12 +338,12 @@ def make_model(
         xgb_params = {**params}
         if random_state is not None:
             xgb_params.setdefault("seed", random_state)
-        return XGBCoxModel(use_gpu=use_gpu, gpu_id=gpu_id, **xgb_params)
+        return XGBCoxModel(**xgb_params)
     if name == "xgb_aft":
         aft_params = {**params}
         if random_state is not None:
             aft_params.setdefault("seed", random_state)
-        return XGBAFTModel(use_gpu=use_gpu, gpu_id=gpu_id, **aft_params)
+        return XGBAFTModel(**aft_params)
 
     # Ensemble models
     if name == "stacking":

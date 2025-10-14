@@ -7,9 +7,6 @@ from pathlib import Path
 import typer
 
 from clinical_survival.cli.commands import (
-    run_automl_command,
-    run_benchmark_hardware_command,
-    run_counterfactual_command,
     run_drift_command,
     run_evaluate_command,
     run_explain_command,
@@ -23,7 +20,6 @@ from clinical_survival.cli.commands import (
     run_validate_config_command,
     setup_main_callback,
 )
-from clinical_survival.gpu_utils import create_gpu_accelerator
 from clinical_survival.serve import run_server
 
 app = typer.Typer(help="Clinical survival modeling pipeline")
@@ -102,23 +98,6 @@ def validate_config(
 
 
 @app.command()
-def automl(
-    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
-    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
-    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
-    time_limit: int = typer.Option(1800, help="Time limit in seconds for optimization"),
-    model_types: list[str] = typer.Option(
-        ["coxph", "rsf", "xgb_cox", "xgb_aft"],
-        help="Model types to optimize"
-    ),
-    metric: str = typer.Option("concordance", help="Metric to optimize"),
-    output_dir: Path = typer.Option(Path("results/automl"), help="Output directory"),
-) -> None:
-    """Run automated model selection and hyperparameter optimization."""
-    run_automl_command(config, data, meta, time_limit, model_types, metric, output_dir)
-
-
-@app.command()
 def run(
     config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
     grid: Path = typer.Option(Path("configs/model_grid.yaml"), exists=True),  # noqa: B008
@@ -191,38 +170,6 @@ def reset_monitoring(
 ) -> None:
     """Reset monitoring baselines and historical data."""
     run_reset_monitoring_command(config, model_name, confirm)
-
-
-@app.command()
-def benchmark_hardware(
-    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
-    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
-    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
-    model_type: str = typer.Option("xgb_cox", help="Model type to benchmark"),
-    use_gpu: bool = typer.Option(True, help="Whether to test GPU acceleration"),
-    gpu_id: int = typer.Option(0, help="GPU device ID to test"),
-) -> None:
-    """Benchmark hardware performance and check GPU availability."""
-    run_benchmark_hardware_command(config, data, meta, model_type, use_gpu, gpu_id)
-
-
-@app.command()
-def counterfactual(
-    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
-    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
-    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
-    model_name: str = typer.Option("xgb_cox", help="Model to use for explanations"),
-    target_risk: float | None = typer.Option(None, help="Target risk value to achieve"),
-    target_time: float | None = typer.Option(None, help="Target survival time to achieve"),
-    n_counterfactuals: int = typer.Option(3, help="Number of counterfactuals to generate"),
-    method: str = typer.Option("gradient", help="Counterfactual generation method"),
-    output_dir: Path = typer.Option(Path("results/counterfactuals"), help="Output directory"),
-) -> None:
-    """Generate counterfactual explanations for model predictions."""
-    run_counterfactual_command(
-        config, data, meta, model_name, target_risk, target_time,
-        n_counterfactuals, method, output_dir
-    )
 
 
 if __name__ == "__main__":  # pragma: no cover
