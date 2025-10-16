@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import random
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,15 +12,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from clinical_survival.repro import seed_everything
+
 try:  # scikit-learn optional in some runtime contexts
     import sklearn  # type: ignore
 except Exception:  # pragma: no cover - allow running without sklearn at import time
     sklearn = None  # type: ignore
-
-try:  # xgboost is optional; seed only if present
-    import xgboost as xgb  # type: ignore
-except Exception:  # pragma: no cover
-    xgb = None  # type: ignore
 
 
 @dataclass
@@ -71,13 +66,9 @@ def load_json(path: str | Path) -> dict[str, Any]:
 def set_global_seed(seed: int) -> None:
     """Seed all supported RNGs for reproducibility and configure sklearn output."""
 
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    random.seed(seed)
-    np.random.seed(seed)
+    seed_everything(seed)
     if sklearn is not None:  # pragma: no branch - guard for optional import
         sklearn.set_config(transform_output="pandas")
-    if xgb is not None:  # pragma: no cover - executed only when xgboost installed
-        xgb.set_config(verbosity=0)
 
 
 def prepare_features(

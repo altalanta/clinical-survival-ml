@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from clinical_survival.eval import ipcw_reliability_curve
+from clinical_survival.metrics import ipcw_reliability_curve
 
 
 def test_ipcw_calibration_matches_manual():

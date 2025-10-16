@@ -5,10 +5,16 @@ help:
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
-.PHONY: setup
-setup: ## create conda env, install pre-commit hooks
-	@echo "Use: mamba env create -f env/environment.yml"
-	@echo "Then: mamba activate clinical-survival-ml && pip install -e .[dev] && pre-commit install"
+.PHONY: install
+install: ## install the package and development dependencies
+	@if command -v uv >/dev/null 2>&1; then \
+		echo "Syncing environment with uv"; \
+		uv sync --extra dev --extra docs; \
+	else \
+		echo "uv not available, falling back to pip"; \
+		$(PYTHON) -m pip install --upgrade pip; \
+		$(PYTHON) -m pip install -e .[dev]; \
+	fi
 
 .PHONY: lint
 lint: ## ruff + black --check

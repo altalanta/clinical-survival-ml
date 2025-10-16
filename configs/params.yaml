@@ -37,8 +37,8 @@ monitoring:
   baseline_window_days: 7
   max_history_records: 1000
 paths:
-  data_csv: "data/toy/toy_survival.csv"
-  metadata: "data/toy/metadata.yaml"
+  data_csv: "examples/toy/data.csv"
+  metadata: "examples/toy/metadata.yaml"
   external_csv: null
   outdir: "results"
   features: "configs/features.yaml"
