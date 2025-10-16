@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from clinical_survival.eval import decision_curve_ipcw
+from clinical_survival.metrics import decision_curve_ipcw
 
 
 def _manual_net_benefit(y: pd.DataFrame, surv: np.ndarray, t: float, threshold: float) -> float:

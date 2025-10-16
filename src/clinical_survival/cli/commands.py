@@ -18,14 +18,13 @@ from clinical_survival.config_validation import (
     print_validation_errors,
     validate_all_configs,
 )
-from clinical_survival.eval import (
-    EvaluationResult,
-    compute_metrics,
+from clinical_survival.eval import EvaluationResult, compute_metrics, evaluate_model
+from clinical_survival.metrics import (
     decision_curve_ipcw,
-    evaluate_model,
     ipcw_reliability_curve,
-    plot_decision,
-    plot_reliability,
+    plot_calibration_curve,
+    plot_decision_curve,
+    calibration_summary,
 )
 from clinical_survival.explain import explain_model
 from clinical_survival.io import load_dataset
@@ -42,6 +41,7 @@ from clinical_survival.report import build_report, load_best_model
 from clinical_survival.tuning import NestedCVResult, nested_cv
 from clinical_survival.utils import (
     ensure_dir,
+    load_json,
     load_yaml,
     prepare_features,
     save_json,
@@ -343,6 +343,12 @@ def run_train_command(
             },
         )
 
+        group_series = (
+            y_train_df[params["id_col"]]
+            if params.get("id_col") and params["id_col"] in y_train_df
+            else None
+        )
+
         try:
             pipeline_factory = _build_pipeline_factory(
                 model_name, feature_spec, params.get("missing", {}), seed_value
@@ -357,6 +363,7 @@ def run_train_command(
                 model_params,
                 eval_times,
                 random_state=seed_value,
+                group_ids=group_series,
                 pipeline_builder=pipeline_factory,
             )
         except Exception as e:
@@ -396,16 +403,18 @@ def run_train_command(
         cv_reliability.assign(label="cv").to_csv(
             calibration_dir / f"reliability_{model_name}_cv.csv", index=False
         )
-        plot_reliability(
-            cv_reliability.assign(label="cv"), calibration_dir / f"reliability_{model_name}_cv.png"
+        plot_calibration_curve(
+            cv_reliability.assign(label="cv"),
+            calibration_dir / f"reliability_{model_name}_cv.png",
         )
 
         cv_decision = decision_curve_ipcw(y_train_eval, oof_surv, eval_times, decision_thresholds)
         cv_decision.assign(label="cv").to_csv(
             decision_dir / f"net_benefit_{model_name}_cv.csv", index=False
         )
-        plot_decision(
-            cv_decision.assign(label="cv"), decision_dir / f"net_benefit_{model_name}_cv.png"
+        plot_decision_curve(
+            cv_decision.assign(label="cv"),
+            decision_dir / f"net_benefit_{model_name}_cv.png",
         )
 
         oof_metrics = compute_metrics(
@@ -438,6 +447,8 @@ def run_train_command(
             label=eval_label,
             thresholds=decision_thresholds,
             bins=int(params.get("calibration", {}).get("bins", 10)),
+            bootstrap=bootstrap_reps,
+            seed=seed_value,
         )
         eval_metrics = {name: interval.estimate for name, interval in eval_result.metrics.items()}
         external_rows.append({"model": model_name, **eval_metrics})
@@ -445,6 +456,10 @@ def run_train_command(
         decision_path = metrics_dir / f"decision_{model_name}_{eval_label}.csv"
         eval_result.reliability.to_csv(reliability_path, index=False)
         eval_result.decision.to_csv(decision_path, index=False)
+        _metrics_to_json(
+            eval_result.metrics,
+            metrics_dir / f"metrics_{eval_label}_{model_name}.json",
+        )
 
     leaderboard_path = metrics_dir / "leaderboard.csv"
     pd.DataFrame(leaderboard_rows).to_csv(leaderboard_path, index=False)
@@ -469,8 +484,19 @@ def run_train_command(
     typer.echo(f"Results available in: {outdir}")
 
 
-def run_evaluate_command(config: Path) -> None:
+def run_evaluate_command(
+    config: Path,
+    *,
+    report: Path | None = None,
+    competing_risks: str = "none",
+) -> None:
     """Run the evaluate command."""
+    if competing_risks.lower() not in {"none", "finegray"}:
+        raise typer.Exit("❌ Invalid value for --competing-risks. Choose from none, finegray")
+    if competing_risks.lower() == "finegray":
+        raise typer.Exit(
+            "❌ Fine–Gray competing risks is not yet available. Pass --competing-risks none."
+        )
     params = load_yaml(config)
     metrics_dir = Path(params["paths"]["outdir"]) / "artifacts" / "metrics"
     leaderboard_path = metrics_dir / "leaderboard.csv"
@@ -479,6 +505,8 @@ def run_evaluate_command(config: Path) -> None:
         typer.echo("Leaderboard:\n" + leaderboard_path.read_text())
     if external_path.exists():
         typer.echo("\nExternal validation:\n" + external_path.read_text())
+    if report is not None:
+        run_report_command(config=config, out=report)
 
 
 def run_explain_command(config: Path, model_name: str) -> None:
@@ -532,8 +560,8 @@ def run_report_command(config: Path, out: Path) -> None:
     if best_model:
         calibration_dir = metrics_dir / "calibration"
         decision_dir = metrics_dir / "decision_curves"
-        calibration_figs["oof"] = calibration_dir / f"reliability_{best_model}_cv.png"
-        decision_figs["oof"] = decision_dir / f"net_benefit_{best_model}_cv.png"
+        calibration_figs["cv"] = calibration_dir / f"reliability_{best_model}_cv.png"
+        decision_figs["cv"] = decision_dir / f"net_benefit_{best_model}_cv.png"
         external_label = (
             "external"
             if (calibration_dir / f"reliability_{best_model}_external.png").exists()
@@ -545,6 +573,27 @@ def run_report_command(config: Path, out: Path) -> None:
             calibration_figs[external_label] = calibration_candidate
         if decision_candidate.exists():
             decision_figs[external_label] = decision_candidate
+
+    metrics_payload: dict[str, Any] = {}
+    if best_model:
+        oof_metrics_path = metrics_dir / f"metrics_oof_{best_model}.json"
+        if oof_metrics_path.exists():
+            metrics_payload["oof"] = load_json(oof_metrics_path)
+        eval_label = params.get("external", {}).get("label", "holdout")
+        holdout_metrics_path = metrics_dir / f"metrics_{eval_label}_{best_model}.json"
+        if holdout_metrics_path.exists():
+            metrics_payload[eval_label] = load_json(holdout_metrics_path)
+
+    calibration_summary_df = pd.DataFrame()
+    decision_curve_records: list[dict[str, Any]] = []
+    if best_model:
+        eval_label = params.get("external", {}).get("label", "holdout")
+        calibration_csv = metrics_dir / f"calibration_{best_model}_{eval_label}.csv"
+        decision_csv = metrics_dir / f"decision_{best_model}_{eval_label}.csv"
+        if calibration_csv.exists():
+            calibration_summary_df = calibration_summary(pd.read_csv(calibration_csv))
+        if decision_csv.exists():
+            decision_curve_records = pd.read_csv(decision_csv).to_dict(orient="records")
 
     shap_figs: list[Path] = []
     if best_model:
@@ -562,6 +611,13 @@ def run_report_command(config: Path, out: Path) -> None:
         shap_figs=shap_figs,
         external_metrics_csv=metrics_dir / "external_summary.csv",
         best_model=best_model,
+        extra_context={
+            "metrics": metrics_payload,
+            "calibration_summary": calibration_summary_df.to_dict(orient="records")
+            if not calibration_summary_df.empty
+            else [],
+            "decision_curve_points": decision_curve_records,
+        },
     )
     typer.echo(f"Report written to {out}")
 

@@ -65,12 +65,22 @@ def train(
     run_train_command(config, grid, features_yaml, seed, horizons, thresholds)
 
 
-@app.command()
-def evaluate_command(
+@app.command("evaluate")
+def evaluate_cli(
     config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    report: Path | None = typer.Option(
+        None,
+        "--report",
+        help="Optional path to write the evaluation HTML report",
+    ),
+    competing_risks: str = typer.Option(
+        "none",
+        "--competing-risks",
+        help="Competing risks adjustment. Choices: none, finegray",
+    ),
 ) -> None:
-    """Display evaluation results from previous training."""
-    run_evaluate_command(config)
+    """Render evaluation artefacts and optionally rebuild the HTML report."""
+    run_evaluate_command(config, report=report, competing_risks=competing_risks)
 
 
 @app.command()

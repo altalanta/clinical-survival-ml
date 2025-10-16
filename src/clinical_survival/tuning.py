@@ -9,11 +9,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
 from sksurv.metrics import concordance_index_censored
 from sksurv.util import Surv
 
 from clinical_survival.models import BaseSurvivalModel
+from clinical_survival.evaluation.cv import TemporalKFold
 
 
 @dataclass
@@ -78,20 +78,24 @@ def nested_cv(
     eval_times: Iterable[float],
     *,
     random_state: int,
+    group_ids: pd.Series | None = None,
     pipeline_builder: Callable[[dict[str, Any]], BaseSurvivalModel],
 ) -> NestedCVResult:
     """Perform nested cross-validation returning fold predictions and best estimator."""
 
     y_struct = _structured_target(time, event)
-    outer = StratifiedKFold(n_splits=outer_splits, shuffle=True, random_state=random_state)
-    inner = StratifiedKFold(n_splits=inner_splits, shuffle=True, random_state=random_state)
     param_candidates = _parameter_grid(param_grid)
+
+    group_array = group_ids.to_numpy() if isinstance(group_ids, pd.Series) else None
+    outer_folds = list(TemporalKFold(outer_splits).split(time, groups=group_array))
+    if not outer_folds:
+        raise ValueError("Unable to create temporal folds; consider reducing n_splits")
 
     folds: list[FoldPrediction] = []
     best_score = -np.inf
     best_params_global: dict[str, Any] | None = None
 
-    for fold_idx, (train_index, test_index) in enumerate(outer.split(X, event), start=1):
+    for fold_idx, (train_index, test_index) in enumerate(outer_folds, start=1):
         X_train, X_valid = X.iloc[train_index], X.iloc[test_index]
         y_train, y_valid = y_struct[train_index], y_struct[test_index]
         event_train = event.iloc[train_index]
@@ -99,9 +103,18 @@ def nested_cv(
         best_inner_score = -np.inf
         best_params_fold: dict[str, Any] = {}
 
+        inner_groups = group_array[train_index] if group_array is not None else None
+        inner_folds = list(
+            TemporalKFold(inner_splits).split(time.iloc[train_index], groups=inner_groups)
+        )
+        if not inner_folds:
+            indices = np.arange(len(train_index))
+            midpoint = max(1, len(indices) // 2)
+            inner_folds = [(indices[:midpoint], indices[midpoint:])]
+
         for params in param_candidates:
             inner_scores: list[float] = []
-            for inner_train_idx, inner_val_idx in inner.split(X_train, event_train):
+            for inner_train_idx, inner_val_idx in inner_folds:
                 X_inner_train = X_train.iloc[inner_train_idx]
                 X_inner_val = X_train.iloc[inner_val_idx]
                 y_inner_train = y_train[inner_train_idx]

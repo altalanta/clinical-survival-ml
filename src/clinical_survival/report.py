@@ -23,6 +23,7 @@ def build_report(
     shap_figs: Iterable[Path] | None = None,
     external_metrics_csv: str | Path | None = None,
     best_model: str | None = None,
+    extra_context: dict[str, object] | None = None,
 ) -> Path:
     """Render the HTML report using the provided artefacts."""
 
@@ -60,6 +61,8 @@ def build_report(
         "shap_figs": [str(path) for path in shap_figs or [] if Path(path).exists()],
         "best_model": best_model,
     }
+    if extra_context:
+        context.update(extra_context)
 
     ensure_dir(Path(output_path).parent)
     html = template.render(**context)

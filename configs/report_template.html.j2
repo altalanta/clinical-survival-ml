@@ -50,6 +50,31 @@
     </tbody>
   </table>
 
+  {% if metrics %}
+  <h2>Discrimination &amp; Calibration Metrics</h2>
+  {% for split, values in metrics.items() %}
+    <h3>{{ split|capitalize }}</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Estimate</th>
+          <th>95% CI</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for name, payload in values.items() %}
+          <tr>
+            <td>{{ name }}</td>
+            <td>{{ '%.3f'|format(payload.estimate) }}</td>
+            <td>{{ '%.3f'|format(payload.ci_lower) }} – {{ '%.3f'|format(payload.ci_upper) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+  {% endif %}
+
   {% if external_metrics %}
   <h2>External Validation{% if best_model %} — {{ best_model }}{% endif %}</h2>
   <table>
@@ -78,6 +103,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 
   <div class="figure-grid">
     {% if calibration_figs.cv %}
@@ -86,7 +112,12 @@
       <img src="{{ calibration_figs.cv }}" alt="Reliability CV" />
     </div>
     {% endif %}
-    {% if calibration_figs.external %}
+    {% if calibration_figs.holdout %}
+    <div class="figure">
+      <h3>Reliability – Holdout</h3>
+      <img src="{{ calibration_figs.holdout }}" alt="Reliability Holdout" />
+    </div>
+    {% elif calibration_figs.external %}
     <div class="figure">
       <h3>Reliability – External</h3>
       <img src="{{ calibration_figs.external }}" alt="Reliability External" />
@@ -101,13 +132,59 @@
       <img src="{{ decision_figs.cv }}" alt="Decision Curve CV" />
     </div>
     {% endif %}
-    {% if decision_figs.external %}
+    {% if decision_figs.holdout %}
+    <div class="figure">
+      <h3>Decision Curve – Holdout</h3>
+      <img src="{{ decision_figs.holdout }}" alt="Decision Curve Holdout" />
+    </div>
+    {% elif decision_figs.external %}
     <div class="figure">
       <h3>Decision Curve – External</h3>
       <img src="{{ decision_figs.external }}" alt="Decision Curve External" />
     </div>
     {% endif %}
   </div>
+
+  {% if calibration_summary %}
+  <h2>Calibration Summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Horizon (days)</th>
+        <th>Mean Absolute Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in calibration_summary %}
+      <tr>
+        <td>{{ row.time|int }}</td>
+        <td>{{ '%.3f'|format(row.mae) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if decision_curve_points %}
+  <h2>Decision Curve Points</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Horizon</th>
+        <th>Threshold</th>
+        <th>Net Benefit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in decision_curve_points %}
+      <tr>
+        <td>{{ row.time|int }}</td>
+        <td>{{ '%.3f'|format(row.threshold) }}</td>
+        <td>{{ '%.3f'|format(row.net_benefit) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   {% endif %}
 
   {% if shap_figs %}
