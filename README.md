@@ -379,6 +379,203 @@ importance = causal_analyzer.feature_importance_causal(
 )
 ```
 
+## Incremental Learning & Online Model Updates
+
+The toolkit supports incremental learning to continuously improve models as new clinical data becomes available, without requiring full retraining:
+
+### Incremental Learning Features
+
+- **Online Learning**: XGBoost models support true online updates using booster updates
+- **Batch Updates**: Process accumulated new data in batches for other model types
+- **Sliding Window**: Maintain models on recent data windows for concept drift adaptation
+- **Automatic Drift Detection**: Monitor data distribution changes and trigger updates
+- **Model Backup**: Automatic backups before updates with configurable retention
+- **Performance Monitoring**: Track model performance changes after each update
+
+### Incremental Learning Configuration
+
+Enable and configure incremental learning in your configuration:
+
+```yaml
+# In configs/params.yaml
+incremental_learning:
+  enabled: true
+  update_frequency_days: 7        # Check for updates every 7 days
+  min_samples_for_update: 50      # Minimum new samples before updating
+  max_samples_in_memory: 1000     # Maximum samples to keep in buffer
+  update_strategy: "online"       # "online", "batch", or "sliding_window"
+  drift_detection_enabled: true   # Enable drift detection
+  create_backup_before_update: true
+  backup_retention_days: 30
+```
+
+### Incremental Learning Usage
+
+```bash
+# Configure incremental learning settings
+clinical-ml configure-incremental \
+  --config-path configs/incremental_config.json \
+  --update-frequency-days 7 \
+  --min-samples-for-update 50 \
+  --max-samples-in-memory 1000 \
+  --update-strategy online \
+  --drift-detection-enabled \
+  --create-backup-before-update
+
+# Update models with new patient data
+clinical-ml update-models \
+  --config configs/params.yaml \
+  --data data/new_patients.csv \
+  --meta data/new_metadata.yaml \
+  --models-dir results/artifacts/models \
+  --model-names coxph xgb_cox \
+  --incremental-config configs/incremental_config.json
+
+# Check incremental learning status
+clinical-ml incremental-status \
+  --models-dir results/artifacts/models \
+  --model-names coxph xgb_cox
+```
+
+### Incremental Learning Outputs
+
+The incremental learning system generates:
+- `results/artifacts/models/incremental_update_history.json`: Complete update history with performance metrics
+- Model backups in `results/artifacts/models/` with timestamp suffixes
+- Automatic cleanup of old backups based on retention policy
+
+### Integration with Monitoring
+
+The monitoring system automatically triggers incremental updates when:
+- **Performance Degradation**: Concordance drops below threshold
+- **Data Drift**: Feature distributions change significantly
+- **Scheduled Updates**: Based on configured update frequency
+
+This ensures models stay current with evolving clinical data while maintaining performance and reliability.
+
+## Distributed Computing for Large-Scale Datasets
+
+The toolkit supports distributed computing to handle enterprise-scale clinical datasets efficiently using Dask and Ray frameworks:
+
+### Distributed Computing Features
+
+- **Multiple Frameworks**: Support for Dask, Ray, and local computing
+- **Intelligent Partitioning**: Automatic data partitioning with balanced, hash, and random strategies
+- **Scalable Training**: Distributed model training across multiple workers and nodes
+- **Performance Benchmarking**: Built-in benchmarking tools to measure scaling efficiency
+- **Fault Tolerance**: Automatic retry of failed tasks and graceful error handling
+- **Resource Management**: Configurable memory, CPU, and GPU allocation per worker
+
+### Distributed Computing Configuration
+
+Configure distributed computing in your main configuration:
+
+```yaml
+# In configs/params.yaml
+distributed_computing:
+  enabled: true
+  cluster_type: "dask"          # "local", "dask", "ray"
+  n_workers: 8                  # Number of worker processes
+  threads_per_worker: 2         # Threads per worker
+  memory_per_worker: "4GB"      # Memory per worker
+  partition_strategy: "balanced" # "balanced", "hash", "random"
+  n_partitions: 16              # Number of data partitions
+  scheduler_address: "127.0.0.1:8786"
+  dashboard_address: "127.0.0.1:8787"
+```
+
+Or create a dedicated distributed configuration file:
+
+```json
+{
+  "cluster_type": "dask",
+  "n_workers": 8,
+  "threads_per_worker": 2,
+  "memory_per_worker": "4GB",
+  "partition_strategy": "balanced",
+  "n_partitions": 16,
+  "scheduler_address": "127.0.0.1:8786",
+  "dashboard_address": "127.0.0.1:8787",
+  "chunk_size": 1000,
+  "optimize_memory": true,
+  "use_gpu_if_available": true,
+  "retry_failed_tasks": true,
+  "max_retries": 3,
+  "timeout_minutes": 60,
+  "resource_allocation_strategy": "balanced"
+}
+```
+
+### Distributed Computing Usage
+
+```bash
+# Configure distributed computing settings
+clinical-ml configure-distributed \
+  --config-path configs/distributed_config.json \
+  --cluster-type dask \
+  --n-workers 8 \
+  --memory-per-worker 4GB \
+  --partition-strategy balanced \
+  --n-partitions 16
+
+# Benchmark scaling performance across dataset sizes
+clinical-ml distributed-benchmark \
+  --config configs/params.yaml \
+  --cluster-type dask \
+  --n-workers 8 \
+  --dataset-sizes 1000 5000 10000 25000 \
+  --model-type xgb_cox \
+  --output-dir results/distributed_benchmark
+
+# Train model on large dataset using distributed computing
+clinical-ml distributed-train \
+  --config configs/params.yaml \
+  --data data/large_clinical_dataset.csv \
+  --meta data/large_metadata.yaml \
+  --cluster-type dask \
+  --n-workers 8 \
+  --n-partitions 16 \
+  --model-type xgb_cox \
+  --output-dir results/distributed_training
+
+# Evaluate model performance using distributed computing
+clinical-ml distributed-evaluate \
+  --config configs/params.yaml \
+  --data data/test_dataset.csv \
+  --meta data/test_metadata.yaml \
+  --model results/artifacts/models/distributed_xgb_cox.pkl \
+  --cluster-type dask \
+  --n-workers 4 \
+  --n-partitions 8 \
+  --metrics concordance ibs brier
+```
+
+### Distributed Computing Outputs
+
+The distributed computing system generates:
+- `results/distributed_benchmark/benchmark_results.json`: Detailed scaling analysis and performance metrics
+- `results/distributed_training/distributed_metrics.json`: Training performance and resource usage statistics
+- Model files in distributed training output directories
+- Dashboard access for monitoring distributed tasks (Dask/Ray dashboards)
+
+### Scaling Performance
+
+The distributed computing system is designed to scale efficiently:
+- **Linear Scaling**: Ideal linear scaling for embarrassingly parallel tasks
+- **Communication Overhead**: Minimized through intelligent partitioning
+- **Memory Efficiency**: Distributed data loading and processing
+- **Fault Tolerance**: Automatic retry of failed tasks
+
+### Integration with Other Features
+
+Distributed computing integrates seamlessly with:
+- **Incremental Learning**: Distributed updates for large datasets
+- **Model Monitoring**: Distributed evaluation and drift detection
+- **AutoML**: Distributed hyperparameter optimization
+- **GPU Acceleration**: Distributed GPU training when available
+
+This enables processing of enterprise-scale clinical datasets (100k+ patients) while maintaining the same simple interface and comprehensive evaluation capabilities.
+
 ## CLI Commands
 
 ```
@@ -388,6 +585,13 @@ clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
 clinical-ml automl --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml --time-limit 1800
 clinical-ml benchmark-hardware --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
 clinical-ml counterfactual --config configs/params.yaml --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml --model xgb_cox --target-risk 0.3
+clinical-ml update-models --config configs/params.yaml --data data/new_patients.csv --meta data/new_metadata.yaml --models-dir results/artifacts/models
+clinical-ml incremental-status --models-dir results/artifacts/models
+clinical-ml configure-incremental --config-path configs/incremental_config.json --update-frequency-days 7 --min-samples-for-update 50
+clinical-ml distributed-benchmark --config configs/params.yaml --cluster-type dask --n-workers 8 --dataset-sizes 1000 5000 10000
+clinical-ml distributed-train --config configs/params.yaml --data data/large_dataset.csv --cluster-type dask --n-workers 8 --model-type xgb_cox
+clinical-ml distributed-evaluate --config configs/params.yaml --data data/test_data.csv --model results/artifacts/models/xgb_cox.pkl --cluster-type dask --n-workers 4
+clinical-ml configure-distributed --config-path configs/distributed_config.json --cluster-type dask --n-workers 8 --memory-per-worker 4GB
 clinical-ml evaluate --config configs/params.yaml
 clinical-ml monitor --config configs/params.yaml --data data/toy/toy_survival.csv
 clinical-ml drift --config configs/params.yaml --model coxph --days 7

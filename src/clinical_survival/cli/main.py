@@ -9,10 +9,16 @@ import typer
 from clinical_survival.cli.commands import (
     run_automl_command,
     run_benchmark_hardware_command,
+    run_configure_distributed_command,
+    run_configure_incremental_command,
     run_counterfactual_command,
+    run_distributed_benchmark_command,
+    run_distributed_evaluate_command,
+    run_distributed_train_command,
     run_drift_command,
     run_evaluate_command,
     run_explain_command,
+    run_incremental_status_command,
     run_load_command,
     run_monitor_command,
     run_monitoring_status_command,
@@ -20,6 +26,7 @@ from clinical_survival.cli.commands import (
     run_reset_monitoring_command,
     run_run_command,
     run_train_command,
+    run_update_models_command,
     run_validate_config_command,
     setup_main_callback,
 )
@@ -232,6 +239,115 @@ def counterfactual(
     run_counterfactual_command(
         config, data, meta, model_name, target_risk, target_time,
         n_counterfactuals, method, output_dir
+    )
+
+
+@app.command()
+def update_models(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
+    models_dir: Path = typer.Option(Path("results/artifacts/models"), help="Directory containing trained models"),  # noqa: B008
+    incremental_config: Path | None = typer.Option(None, help="Incremental learning configuration file"),  # noqa: B008
+    model_names: list[str] | None = typer.Option(None, help="Specific models to update (or all if not specified)"),
+    force_update: bool = typer.Option(False, help="Force update even if conditions not met"),
+) -> None:
+    """Update trained models with new data using incremental learning."""
+    run_update_models_command(
+        config, data, meta, models_dir, incremental_config, model_names, force_update
+    )
+
+
+@app.command()
+def incremental_status(
+    models_dir: Path = typer.Option(Path("results/artifacts/models"), help="Directory containing trained models"),  # noqa: B008
+    model_names: list[str] | None = typer.Option(None, help="Specific models to check (or all if not specified)"),
+) -> None:
+    """Show status of incremental learning for models."""
+    run_incremental_status_command(models_dir, model_names)
+
+
+@app.command()
+def configure_incremental(
+    config_path: Path = typer.Option(Path("configs/incremental_config.json"), help="Path to save incremental learning configuration"),  # noqa: B008
+    update_frequency_days: int = typer.Option(7, help="How often to check for updates (days)"),
+    min_samples_for_update: int = typer.Option(50, help="Minimum new samples before updating"),
+    max_samples_in_memory: int = typer.Option(1000, help="Maximum samples to keep in memory"),
+    update_strategy: str = typer.Option("online", help="Update strategy: online, batch, or sliding_window"),
+    drift_detection_enabled: bool = typer.Option(True, help="Enable drift detection"),
+    create_backup_before_update: bool = typer.Option(True, help="Create backup before updating"),
+) -> None:
+    """Configure incremental learning settings."""
+    run_configure_incremental_command(
+        config_path, update_frequency_days, min_samples_for_update,
+        max_samples_in_memory, update_strategy, drift_detection_enabled,
+        create_backup_before_update
+    )
+
+
+@app.command()
+def distributed_benchmark(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    cluster_type: str = typer.Option("local", help="Cluster type: local, dask, ray"),
+    n_workers: int = typer.Option(4, help="Number of workers"),
+    dataset_sizes: list[int] = typer.Option([1000, 5000, 10000], help="Dataset sizes to benchmark"),
+    model_type: str = typer.Option("coxph", help="Model type to benchmark"),
+    output_dir: Path = typer.Option(Path("results/distributed_benchmark"), help="Output directory"),  # noqa: B008
+) -> None:
+    """Benchmark distributed computing performance across different dataset sizes."""
+    run_distributed_benchmark_command(
+        config, cluster_type, n_workers, dataset_sizes, model_type, output_dir
+    )
+
+
+@app.command()
+def distributed_train(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
+    cluster_type: str = typer.Option("local", help="Cluster type: local, dask, ray"),
+    n_workers: int = typer.Option(4, help="Number of workers"),
+    n_partitions: int = typer.Option(10, help="Number of data partitions"),
+    model_type: str = typer.Option("coxph", help="Model type to train"),
+    output_dir: Path = typer.Option(Path("results/distributed_training"), help="Output directory"),  # noqa: B008
+) -> None:
+    """Train model using distributed computing."""
+    run_distributed_train_command(
+        config, data, meta, cluster_type, n_workers, n_partitions, model_type, output_dir
+    )
+
+
+@app.command()
+def distributed_evaluate(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
+    model: Path = typer.Option(..., help="Path to trained model file"),  # noqa: B008
+    cluster_type: str = typer.Option("local", help="Cluster type: local, dask, ray"),
+    n_workers: int = typer.Option(4, help="Number of workers"),
+    n_partitions: int = typer.Option(10, help="Number of data partitions"),
+    metrics: list[str] = typer.Option(["concordance", "ibs"], help="Metrics to compute"),
+) -> None:
+    """Evaluate model using distributed computing."""
+    run_distributed_evaluate_command(
+        config, data, meta, model, cluster_type, n_workers, n_partitions, metrics
+    )
+
+
+@app.command()
+def configure_distributed(
+    config_path: Path = typer.Option(Path("configs/distributed_config.json"), help="Path to save distributed computing configuration"),  # noqa: B008
+    cluster_type: str = typer.Option("local", help="Cluster type: local, dask, ray"),
+    n_workers: int = typer.Option(4, help="Number of workers"),
+    threads_per_worker: int = typer.Option(2, help="Threads per worker"),
+    memory_per_worker: str = typer.Option("2GB", help="Memory per worker"),
+    partition_strategy: str = typer.Option("balanced", help="Partition strategy: balanced, hash, random"),
+    n_partitions: int = typer.Option(10, help="Number of partitions"),
+) -> None:
+    """Configure distributed computing settings."""
+    run_configure_distributed_command(
+        config_path, cluster_type, n_workers, threads_per_worker,
+        memory_per_worker, partition_strategy, n_partitions
     )
 
 

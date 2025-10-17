@@ -49,3 +49,22 @@ external:
   group_column: "group"
   train_value: "train"
   external_value: "external"
+incremental_learning:
+  enabled: false
+  update_frequency_days: 7
+  min_samples_for_update: 50
+  max_samples_in_memory: 1000
+  update_strategy: "online"
+  drift_detection_enabled: true
+  create_backup_before_update: true
+  backup_retention_days: 30
+distributed_computing:
+  enabled: false
+  cluster_type: "local"
+  n_workers: 4
+  threads_per_worker: 2
+  memory_per_worker: "2GB"
+  partition_strategy: "balanced"
+  n_partitions: 10
+  scheduler_address: "127.0.0.1:8786"
+  dashboard_address: "127.0.0.1:8787"

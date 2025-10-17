@@ -15,6 +15,24 @@ from clinical_survival.counterfactual import (
     create_counterfactual_explainer,
 )
 from clinical_survival.gpu_utils import GPUAccelerator, create_gpu_accelerator
+from clinical_survival.incremental_learning import (
+    IncrementalLearner,
+    IncrementalLearningManager,
+    IncrementalUpdateConfig,
+    create_incremental_learner,
+    load_incremental_learning_config,
+)
+from clinical_survival.distributed import (
+    DistributedBenchmarker,
+    DistributedClient,
+    DistributedConfig,
+    DistributedDataset,
+    DistributedEvaluator,
+    DistributedMetrics,
+    DistributedTrainer,
+    create_distributed_config,
+    load_distributed_config,
+)
 
 __all__ = [
     "__version__",
@@ -25,4 +43,18 @@ __all__ = [
     "CausalInference",
     "GPUAccelerator",
     "create_gpu_accelerator",
+    "IncrementalLearner",
+    "IncrementalLearningManager",
+    "IncrementalUpdateConfig",
+    "create_incremental_learner",
+    "load_incremental_learning_config",
+    "DistributedClient",
+    "DistributedConfig",
+    "DistributedDataset",
+    "DistributedTrainer",
+    "DistributedEvaluator",
+    "DistributedBenchmarker",
+    "DistributedMetrics",
+    "create_distributed_config",
+    "load_distributed_config",
 ]
