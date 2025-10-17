@@ -53,10 +53,12 @@ class ModelMonitor:
         models_dir: str | Path,
         monitoring_dir: str | Path | None = None,
         alert_thresholds: dict[str, float] | None = None,
+        incremental_learning_config: dict[str, Any] | None = None,
     ):
         self.models_dir = Path(models_dir)
         self.monitoring_dir = Path(monitoring_dir) if monitoring_dir else self.models_dir / "monitoring"
         self.alert_thresholds = alert_thresholds or self._default_thresholds()
+        self._incremental_learning_config = incremental_learning_config or {}
         self.metrics_history: dict[str, list[MonitoringMetrics]] = defaultdict(list)
         self.alerts: list[DriftAlert] = []
         self.baseline_stats: dict[str, dict[str, dict[str, float]]] = {}
@@ -239,8 +241,79 @@ class ModelMonitor:
 
         return max(drift, unique_drift)
 
+    def _check_incremental_learning_triggers(self, model_name: str, metrics: MonitoringMetrics) -> None:
+        """Check if incremental learning should be triggered based on monitoring data."""
+        # Check if incremental learning is enabled for this model
+        if not hasattr(self, '_incremental_learning_config') or not self._incremental_learning_config.get('enabled', False):
+            return
+
+        # Check for performance degradation that warrants incremental update
+        if self._has_recent_history(model_name):
+            recent_metrics = self._get_recent_metrics(model_name, days=self._incremental_learning_config.get('update_frequency_days', 7))
+
+            if recent_metrics:
+                baseline_concordance = recent_metrics[0].concordance
+                current_concordance = metrics.concordance
+
+                concordance_drop = baseline_concordance - current_concordance
+                threshold = self._incremental_learning_config.get('performance_threshold', 0.02)
+
+                if concordance_drop > threshold:
+                    # Trigger incremental learning update
+                    self._trigger_incremental_update(model_name, "performance_degradation", concordance_drop)
+
+        # Check for significant drift that warrants incremental update
+        max_drift = max(metrics.drift_scores.values()) if metrics.drift_scores else 0.0
+        drift_threshold = self._incremental_learning_config.get('drift_threshold', 0.1)
+
+        if max_drift > drift_threshold:
+            self._trigger_incremental_update(model_name, "data_drift", max_drift)
+
+    def _trigger_incremental_update(self, model_name: str, trigger_type: str, severity: float) -> None:
+        """Trigger an incremental learning update."""
+        try:
+            # Import here to avoid circular imports
+            from clinical_survival.incremental_learning import IncrementalLearningManager, IncrementalUpdateConfig
+
+            # Get models directory from configuration
+            models_dir = self.monitoring_dir.parent / "models"
+            if not models_dir.exists():
+                logger.warning(f"Models directory not found: {models_dir}")
+                return
+
+            # Load incremental learning configuration
+            config_path = self.monitoring_dir.parent / "incremental_config.json"
+            if config_path.exists():
+                config = load_incremental_learning_config(config_path)
+            else:
+                config = IncrementalUpdateConfig()
+
+            # Initialize incremental learning manager
+            manager = IncrementalLearningManager(models_dir, config)
+
+            # Check if model is already in incremental learning
+            status = manager.get_model_update_status(model_name)
+
+            if status.get('status') == 'active':
+                logger.info(f"Triggering incremental update for model {model_name} due to {trigger_type}")
+                # Here we would trigger the actual incremental update
+                # For now, we'll just log the recommendation
+                recommendation = f"Model {model_name} should be updated due to {trigger_type} (severity: {severity".3f"})"
+                logger.info(recommendation)
+
+                # In a real implementation, this would trigger the update process
+                # manager.process_new_data(model_name, new_data_X, new_data_y)
+
+            else:
+                logger.info(f"Model {model_name} not configured for incremental learning")
+
+        except Exception as e:
+            logger.error(f"Failed to trigger incremental update for {model_name}: {e}")
+
     def _check_alerts(self, model_name: str, metrics: MonitoringMetrics) -> None:
         """Check for performance alerts based on thresholds."""
+        # Check for incremental learning integration
+        self._check_incremental_learning_triggers(model_name, metrics)
 
         # Check concordance degradation
         if self._has_recent_history(model_name):

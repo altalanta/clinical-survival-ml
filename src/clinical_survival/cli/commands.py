@@ -39,6 +39,23 @@ from clinical_survival.preprocess import build_preprocessor
 from clinical_survival.monitoring import ModelMonitor, PerformanceTracker
 from clinical_survival.report import build_report, load_best_model
 from clinical_survival.tuning import NestedCVResult, nested_cv
+from clinical_survival.incremental_learning import (
+    IncrementalLearningManager,
+    IncrementalUpdateConfig,
+    create_incremental_learner,
+    load_incremental_learning_config,
+)
+from clinical_survival.distributed import (
+    DistributedBenchmarker,
+    DistributedClient,
+    DistributedConfig,
+    DistributedDataset,
+    DistributedEvaluator,
+    DistributedMetrics,
+    DistributedTrainer,
+    create_distributed_config,
+    load_distributed_config,
+)
 from clinical_survival.utils import (
     ensure_dir,
     load_json,
@@ -1305,3 +1322,545 @@ def run_counterfactual_command(
 
     typer.echo(f"\n💾 Results saved to {results_path}")
     typer.echo("🎉 Counterfactual explanation generation completed!")
+
+
+def run_update_models_command(
+    config_path: Path,
+    data_path: Path,
+    meta_path: Path,
+    models_dir: Path,
+    incremental_config_path: Path | None = None,
+    model_names: list[str] | None = None,
+    force_update: bool = False,
+) -> None:
+    """Update trained models with new data using incremental learning."""
+    log_function_call("run_update_models_command", {
+        "config_path": str(config_path),
+        "data_path": str(data_path),
+        "meta_path": str(meta_path),
+        "models_dir": str(models_dir),
+        "incremental_config_path": str(incremental_config_path) if incremental_config_path else None,
+        "model_names": model_names,
+        "force_update": force_update
+    })
+
+    typer.echo("🔄 Starting incremental model updates...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Load incremental learning configuration
+    if incremental_config_path:
+        incremental_config = load_incremental_learning_config(incremental_config_path)
+    else:
+        # Use default configuration
+        incremental_config = IncrementalUpdateConfig()
+
+    # Load new data
+    typer.echo("📊 Loading new data...")
+    try:
+        X, y = load_dataset(data_path, meta_path, params["time_col"], params["event_col"])
+        typer.echo(f"✅ Loaded {len(X)} samples")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # Initialize incremental learning manager
+    manager = IncrementalLearningManager(models_dir, incremental_config)
+
+    # Update specified models or all available models
+    if model_names:
+        models_to_update = model_names
+    else:
+        # Find all available models
+        models_to_update = []
+        for model_file in models_dir.glob("*.pkl"):
+            model_name = model_file.stem
+            if model_name not in models_to_update:
+                models_to_update.append(model_name)
+
+    typer.echo(f"🔧 Updating models: {models_to_update}")
+
+    updated_models = []
+    for model_name in models_to_update:
+        typer.echo(f"\n📈 Processing model: {model_name}")
+
+        try:
+            # Check if model exists
+            model_path = models_dir / f"{model_name}.pkl"
+            if not model_path.exists():
+                typer.echo(f"⚠️  Model {model_name} not found at {model_path}")
+                continue
+
+            # Load the model
+            model = joblib.load(model_path)
+
+            # Add to incremental learning manager if not already there
+            if model_name not in manager.learners:
+                manager.add_model_for_incremental_learning(model_name, model)
+
+            # Process new data for this model
+            success = manager.process_new_data(model_name, X, y)
+
+            if success:
+                typer.echo(f"✅ Successfully updated model {model_name}")
+                updated_models.append(model_name)
+            else:
+                typer.echo(f"⚠️  No update needed for model {model_name}")
+
+        except Exception as e:
+            log_error_with_context(e, f"updating model {model_name}")
+            typer.echo(f"❌ Failed to update model {model_name}: {e}")
+            continue
+
+    # Save all learners
+    manager.save_all_learners()
+
+    typer.echo(f"\n📊 Update summary: {len(updated_models)}/{len(models_to_update)} models updated")
+    typer.echo("🎉 Incremental model updates completed!")
+
+
+def run_incremental_status_command(
+    models_dir: Path,
+    model_names: list[str] | None = None,
+) -> None:
+    """Show status of incremental learning for models."""
+    log_function_call("run_incremental_status_command", {
+        "models_dir": str(models_dir),
+        "model_names": model_names
+    })
+
+    typer.echo("📊 Checking incremental learning status...")
+
+    # Use default incremental learning configuration
+    incremental_config = IncrementalUpdateConfig()
+
+    # Initialize manager
+    manager = IncrementalLearningManager(models_dir, incremental_config)
+
+    # Get status for specified models or all models
+    if model_names:
+        models_to_check = model_names
+    else:
+        models_to_check = list(manager.learners.keys())
+
+    if not models_to_check:
+        typer.echo("ℹ️  No models found for incremental learning")
+        return
+
+    typer.echo(f"\n🔍 Status for {len(models_to_check)} models:")
+
+    for model_name in models_to_check:
+        status = manager.get_model_update_status(model_name)
+
+        typer.echo(f"\n📈 Model: {model_name}")
+        typer.echo(f"   Status: {status.get('status', 'unknown')}")
+        typer.echo(f"   Buffer size: {status.get('buffer_size', 0)} samples")
+        typer.echo(f"   Total updates: {status.get('total_updates', 0)}")
+
+        last_update = status.get('last_update')
+        if last_update:
+            typer.echo(f"   Last update: {last_update}")
+
+        config = status.get('config', {})
+        if config:
+            typer.echo(f"   Min samples for update: {config.get('min_samples_for_update', 'N/A')}")
+            typer.echo(f"   Max samples in memory: {config.get('max_samples_in_memory', 'N/A')}")
+            typer.echo(f"   Update strategy: {config.get('update_strategy', 'N/A')}")
+
+    typer.echo("\n✅ Incremental learning status check completed!")
+
+
+def run_configure_incremental_command(
+    config_path: Path,
+    update_frequency_days: int = 7,
+    min_samples_for_update: int = 50,
+    max_samples_in_memory: int = 1000,
+    update_strategy: str = "online",
+    drift_detection_enabled: bool = True,
+    create_backup_before_update: bool = True,
+) -> None:
+    """Configure incremental learning settings."""
+    log_function_call("run_configure_incremental_command", {
+        "config_path": str(config_path),
+        "update_frequency_days": update_frequency_days,
+        "min_samples_for_update": min_samples_for_update,
+        "max_samples_in_memory": max_samples_in_memory,
+        "update_strategy": update_strategy,
+        "drift_detection_enabled": drift_detection_enabled,
+        "create_backup_before_update": create_backup_before_update
+    })
+
+    typer.echo("⚙️  Configuring incremental learning settings...")
+
+    # Create configuration
+    config = {
+        "update_frequency_days": update_frequency_days,
+        "min_samples_for_update": min_samples_for_update,
+        "max_samples_in_memory": max_samples_in_memory,
+        "update_strategy": update_strategy,
+        "window_size_days": 365,
+        "performance_threshold": 0.02,
+        "max_updates_per_model": 10,
+        "drift_detection_enabled": drift_detection_enabled,
+        "drift_threshold": 0.1,
+        "create_backup_before_update": create_backup_before_update,
+        "backup_retention_days": 30
+    }
+
+    # Save configuration
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    typer.echo(f"✅ Incremental learning configuration saved to {config_path}")
+    typer.echo("\n📋 Configuration summary:"    typer.echo(f"   Update frequency: {update_frequency_days} days")
+    typer.echo(f"   Min samples for update: {min_samples_for_update}")
+    typer.echo(f"   Max samples in memory: {max_samples_in_memory}")
+    typer.echo(f"   Update strategy: {update_strategy}")
+    typer.echo(f"   Drift detection: {'enabled' if drift_detection_enabled else 'disabled'}")
+    typer.echo(f"   Backup before update: {'enabled' if create_backup_before_update else 'disabled'}")
+
+    typer.echo("\n🎉 Incremental learning configuration completed!")
+
+
+def run_distributed_benchmark_command(
+    config_path: Path,
+    cluster_type: str = "local",
+    n_workers: int = 4,
+    dataset_sizes: list[int] = [1000, 5000, 10000],
+    model_type: str = "coxph",
+    output_dir: Path = Path("results/distributed_benchmark"),
+) -> None:
+    """Benchmark distributed computing performance across different dataset sizes."""
+    log_function_call("run_distributed_benchmark_command", {
+        "config_path": str(config_path),
+        "cluster_type": cluster_type,
+        "n_workers": n_workers,
+        "dataset_sizes": dataset_sizes,
+        "model_type": model_type,
+        "output_dir": str(output_dir)
+    })
+
+    typer.echo("🚀 Starting distributed computing benchmark...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Create distributed configuration
+    dist_config = create_distributed_config(
+        cluster_type=cluster_type,
+        n_workers=n_workers
+    )
+
+    # Initialize distributed client
+    client = DistributedClient(dist_config)
+    if not client.initialize():
+        typer.echo("❌ Failed to initialize distributed client")
+        return
+
+    try:
+        # Create benchmarker
+        benchmarker = DistributedBenchmarker(client, dist_config)
+
+        # Run benchmark
+        typer.echo(f"📊 Benchmarking {len(dataset_sizes)} dataset sizes...")
+        typer.echo(f"🔧 Cluster: {cluster_type} with {n_workers} workers")
+
+        results = benchmarker.benchmark_scaling(
+            dataset_sizes=dataset_sizes,
+            model_factory=lambda **kwargs: make_model(model_type, **kwargs),
+            model_params={"random_state": params["seed"]}
+        )
+
+        if not results:
+            typer.echo("❌ No benchmark results generated")
+            return
+
+        # Analyze scaling efficiency
+        analysis = benchmarker.analyze_scaling_efficiency(results)
+
+        # Save results
+        ensure_dir(output_dir)
+        results_file = output_dir / "benchmark_results.json"
+
+        # Convert metrics to serializable format
+        serializable_results = {}
+        for size, metrics in results.items():
+            serializable_results[size] = {
+                "total_time": metrics.total_time,
+                "computation_time": metrics.computation_time,
+                "communication_time": metrics.communication_time,
+                "n_tasks_completed": metrics.n_tasks_completed,
+                "n_tasks_failed": metrics.n_tasks_failed,
+                "speedup_factor": metrics.speedup_factor
+            }
+
+        output_data = {
+            "benchmark_results": serializable_results,
+            "scaling_analysis": analysis,
+            "configuration": {
+                "cluster_type": cluster_type,
+                "n_workers": n_workers,
+                "dataset_sizes": dataset_sizes,
+                "model_type": model_type
+            }
+        }
+
+        save_json(output_data, results_file)
+
+        # Display results
+        typer.echo(f"\n📈 Benchmark Results (saved to {results_file}):")
+
+        for size in sorted(results.keys()):
+            metrics = results[size]
+            typer.echo(f"   Dataset size {size","}:")
+            typer.echo(f"     Total time: {metrics.total_time".2f"}s")
+            typer.echo(f"     Speedup: {metrics.speedup_factor".2f"}x")
+            typer.echo(f"     Tasks: {metrics.n_tasks_completed} completed, {metrics.n_tasks_failed} failed")
+
+        # Display scaling analysis
+        typer.echo("
+📊 Scaling Analysis:"        if "r_squared" in analysis:
+            typer.echo(f"   R²: {analysis['r_squared']".3f"}")
+            typer.echo(f"   Scaling coefficient: {analysis['scaling_coefficient']".3f"}")
+            typer.echo(f"   Trend: {analysis.get('ideal_scaling', 'unknown')}")
+
+        typer.echo(f"   Efficiency trend: {analysis.get('efficiency_trend', 'unknown')}")
+
+        typer.echo("\n🎉 Distributed benchmark completed!")
+
+    finally:
+        client.shutdown()
+
+
+def run_distributed_train_command(
+    config_path: Path,
+    data_path: Path,
+    meta_path: Path,
+    cluster_type: str = "local",
+    n_workers: int = 4,
+    n_partitions: int = 10,
+    model_type: str = "coxph",
+    output_dir: Path = Path("results/distributed_training"),
+) -> None:
+    """Train model using distributed computing."""
+    log_function_call("run_distributed_train_command", {
+        "config_path": str(config_path),
+        "data_path": str(data_path),
+        "meta_path": str(meta_path),
+        "cluster_type": cluster_type,
+        "n_workers": n_workers,
+        "n_partitions": n_partitions,
+        "model_type": model_type,
+        "output_dir": str(output_dir)
+    })
+
+    typer.echo("🚀 Starting distributed training...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Create distributed configuration
+    dist_config = create_distributed_config(
+        cluster_type=cluster_type,
+        n_workers=n_workers,
+        n_partitions=n_partitions
+    )
+
+    # Initialize distributed client
+    client = DistributedClient(dist_config)
+    if not client.initialize():
+        typer.echo("❌ Failed to initialize distributed client")
+        return
+
+    try:
+        # Load and partition data
+        typer.echo("📊 Loading and partitioning data...")
+        dataset = DistributedDataset(client, data_path, dist_config)
+
+        if not dataset.load_and_partition():
+            typer.echo("❌ Failed to load and partition data")
+            return
+
+        typer.echo(f"✅ Data loaded and partitioned into {dataset.get_n_partitions()} partitions")
+
+        # Create trainer
+        trainer = DistributedTrainer(client, dist_config)
+
+        # Train model
+        typer.echo(f"🔧 Training {model_type} model on {dataset.get_n_partitions()} partitions...")
+
+        model, metrics = trainer.train_distributed(
+            dataset,
+            model_factory=lambda **kwargs: make_model(model_type, **kwargs),
+            model_params={"random_state": params["seed"]}
+        )
+
+        typer.echo("✅ Training completed!"        typer.echo(f"   Total time: {metrics.total_time".2f"}s")
+        typer.echo(f"   Computation time: {metrics.computation_time".2f"}s")
+        typer.echo(f"   Communication time: {metrics.communication_time".2f"}s")
+        typer.echo(f"   Tasks completed: {metrics.n_tasks_completed}")
+        typer.echo(f"   Tasks failed: {metrics.n_tasks_failed}")
+        typer.echo(f"   Speedup factor: {metrics.speedup_factor".2f"}x")
+
+        # Save model and metrics
+        ensure_dir(output_dir)
+
+        # Save model
+        model_file = output_dir / f"distributed_{model_type}_model.pkl"
+        import joblib
+        joblib.dump(model, model_file)
+        typer.echo(f"💾 Model saved to {model_file}")
+
+        # Save metrics
+        metrics_file = output_dir / "distributed_metrics.json"
+        metrics_data = {
+            "total_time": metrics.total_time,
+            "computation_time": metrics.computation_time,
+            "communication_time": metrics.communication_time,
+            "memory_usage_peak": metrics.memory_usage_peak,
+            "cpu_usage_avg": metrics.cpu_usage_avg,
+            "n_tasks_completed": metrics.n_tasks_completed,
+            "n_tasks_failed": metrics.n_tasks_failed,
+            "data_transfer_volume": metrics.data_transfer_volume,
+            "speedup_factor": metrics.speedup_factor
+        }
+        save_json(metrics_data, metrics_file)
+        typer.echo(f"📊 Metrics saved to {metrics_file}")
+
+        typer.echo("\n🎉 Distributed training completed!")
+
+    finally:
+        client.shutdown()
+
+
+def run_distributed_evaluate_command(
+    config_path: Path,
+    data_path: Path,
+    meta_path: Path,
+    model_path: Path,
+    cluster_type: str = "local",
+    n_workers: int = 4,
+    n_partitions: int = 10,
+    metrics: list[str] = ["concordance", "ibs"],
+) -> None:
+    """Evaluate model using distributed computing."""
+    log_function_call("run_distributed_evaluate_command", {
+        "config_path": str(config_path),
+        "data_path": str(data_path),
+        "meta_path": str(meta_path),
+        "model_path": str(model_path),
+        "cluster_type": cluster_type,
+        "n_workers": n_workers,
+        "n_partitions": n_partitions,
+        "metrics": metrics
+    })
+
+    typer.echo("🚀 Starting distributed evaluation...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Create distributed configuration
+    dist_config = create_distributed_config(
+        cluster_type=cluster_type,
+        n_workers=n_workers,
+        n_partitions=n_partitions
+    )
+
+    # Initialize distributed client
+    client = DistributedClient(dist_config)
+    if not client.initialize():
+        typer.echo("❌ Failed to initialize distributed client")
+        return
+
+    try:
+        # Load model
+        typer.echo(f"📥 Loading model from {model_path}...")
+        import joblib
+        model = joblib.load(model_path)
+        typer.echo("✅ Model loaded")
+
+        # Load and partition data
+        typer.echo("📊 Loading and partitioning data...")
+        dataset = DistributedDataset(client, data_path, dist_config)
+
+        if not dataset.load_and_partition():
+            typer.echo("❌ Failed to load and partition data")
+            return
+
+        typer.echo(f"✅ Data loaded and partitioned into {dataset.get_n_partitions()} partitions")
+
+        # Create evaluator
+        evaluator = DistributedEvaluator(client, dist_config)
+
+        # Evaluate model
+        typer.echo(f"🔧 Evaluating model on {dataset.get_n_partitions()} partitions...")
+        typer.echo(f"📊 Metrics: {', '.join(metrics)}")
+
+        results = evaluator.evaluate_distributed(dataset, model, metrics)
+
+        # Display results
+        typer.echo("\n📈 Evaluation Results:"        for metric, value in results.items():
+            typer.echo(f"   {metric}: {value".4f"}")
+
+        typer.echo("\n🎉 Distributed evaluation completed!")
+
+    finally:
+        client.shutdown()
+
+
+def run_configure_distributed_command(
+    config_path: Path,
+    cluster_type: str = "local",
+    n_workers: int = 4,
+    threads_per_worker: int = 2,
+    memory_per_worker: str = "2GB",
+    partition_strategy: str = "balanced",
+    n_partitions: int = 10,
+) -> None:
+    """Configure distributed computing settings."""
+    log_function_call("run_configure_distributed_command", {
+        "config_path": str(config_path),
+        "cluster_type": cluster_type,
+        "n_workers": n_workers,
+        "threads_per_worker": threads_per_worker,
+        "memory_per_worker": memory_per_worker,
+        "partition_strategy": partition_strategy,
+        "n_partitions": n_partitions
+    })
+
+    typer.echo("⚙️  Configuring distributed computing settings...")
+
+    # Create configuration
+    config = {
+        "cluster_type": cluster_type,
+        "n_workers": n_workers,
+        "threads_per_worker": threads_per_worker,
+        "memory_per_worker": memory_per_worker,
+        "partition_strategy": partition_strategy,
+        "n_partitions": n_partitions,
+        "scheduler_address": "127.0.0.1:8786",
+        "dashboard_address": "127.0.0.1:8787",
+        "chunk_size": 1000,
+        "optimize_memory": True,
+        "use_gpu_if_available": True,
+        "retry_failed_tasks": True,
+        "max_retries": 3,
+        "timeout_minutes": 60,
+        "resource_allocation_strategy": "balanced"
+    }
+
+    # Save configuration
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    typer.echo(f"✅ Distributed computing configuration saved to {config_path}")
+    typer.echo("\n📋 Configuration summary:"    typer.echo(f"   Cluster type: {cluster_type}")
+    typer.echo(f"   Workers: {n_workers}")
+    typer.echo(f"   Threads per worker: {threads_per_worker}")
+    typer.echo(f"   Memory per worker: {memory_per_worker}")
+    typer.echo(f"   Partition strategy: {partition_strategy}")
+    typer.echo(f"   Number of partitions: {n_partitions}")
+
+    typer.echo("\n🎉 Distributed computing configuration completed!")

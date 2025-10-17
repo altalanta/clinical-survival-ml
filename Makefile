@@ -18,17 +18,24 @@ install: ## install the package and development dependencies
 
 .PHONY: lint
 lint: ## ruff + black --check
-	ruff check src tests
-	black --check src tests
+	ruff check src tests tests/integration
+	black --check src tests tests/integration
 
 .PHONY: format
 format: ## apply ruff & black formatting
-	ruff check --fix src tests
-	black src tests
+	ruff check --fix src tests tests/integration
+	black src tests tests/integration
 
 .PHONY: unit
 unit: ## run unit tests
 	pytest -q
+
+.PHONY: integration
+integration: ## run integration tests across all workflows
+	pytest tests/integration/ -v --tb=short
+
+.PHONY: test
+test: unit integration ## run all tests (unit + integration)
 
 .PHONY: smoke
 smoke: ## end-to-end toy run
