@@ -7,11 +7,19 @@ from pathlib import Path
 import typer
 
 from clinical_survival.cli.commands import (
+    run_ab_test_results_command,
     run_automl_command,
     run_benchmark_hardware_command,
+    run_check_retraining_triggers_command,
+    run_clinical_interpret_command,
     run_configure_distributed_command,
     run_configure_incremental_command,
     run_counterfactual_command,
+    run_create_ab_test_command,
+    run_data_cleansing_command,
+    run_data_quality_profile_command,
+    run_data_validation_command,
+    run_deploy_model_command,
     run_distributed_benchmark_command,
     run_distributed_evaluate_command,
     run_distributed_train_command,
@@ -20,10 +28,14 @@ from clinical_survival.cli.commands import (
     run_explain_command,
     run_incremental_status_command,
     run_load_command,
+    run_mlops_status_command,
     run_monitor_command,
     run_monitoring_status_command,
+    run_register_model_command,
     run_report_command,
     run_reset_monitoring_command,
+    run_risk_stratification_command,
+    run_rollback_deployment_command,
     run_run_command,
     run_train_command,
     run_update_models_command,
@@ -348,6 +360,167 @@ def configure_distributed(
     run_configure_distributed_command(
         config_path, cluster_type, n_workers, threads_per_worker,
         memory_per_worker, partition_strategy, n_partitions
+    )
+
+
+@app.command()
+def clinical_interpret(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
+    model: Path = typer.Option(..., help="Path to trained model file"),  # noqa: B008
+    output_dir: Path = typer.Option(Path("results/clinical_interpretability"), help="Output directory"),  # noqa: B008
+    patient_ids: list[str] | None = typer.Option(None, help="Specific patient IDs to analyze"),
+    include_detailed_analysis: bool = typer.Option(True, help="Include detailed feature analysis"),
+    output_format: str = typer.Option("html", help="Output format: html or json"),
+) -> None:
+    """Generate comprehensive clinical interpretability report."""
+    run_clinical_interpret_command(
+        config, data, meta, model, output_dir, patient_ids, None,
+        include_detailed_analysis, output_format
+    )
+
+
+@app.command()
+def risk_stratification(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True),  # noqa: B008
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path = typer.Option(Path("data/toy/metadata.yaml"), exists=True),  # noqa: B008
+    model: Path = typer.Option(..., help="Path to trained model file"),  # noqa: B008
+    output_dir: Path = typer.Option(Path("results/risk_stratification"), help="Output directory"),  # noqa: B008
+) -> None:
+    """Generate risk stratification report."""
+    run_risk_stratification_command(
+        config, data, meta, model, output_dir, None
+    )
+
+
+@app.command()
+def register_model(
+    model: Path = typer.Option(..., help="Path to trained model file"),  # noqa: B008
+    model_name: str = typer.Option(..., help="Name of the model"),
+    version_number: str = typer.Option(..., help="Version number (e.g., 1.0.0)"),
+    description: str = typer.Option("", help="Model description"),
+    tags: list[str] = typer.Option(None, help="Model tags"),
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    created_by: str = typer.Option("system", help="Who created this model"),
+) -> None:
+    """Register a trained model in the MLOps registry."""
+    run_register_model_command(
+        model, model_name, version_number, description, tags, registry_path, created_by
+    )
+
+
+@app.command()
+def mlops_status(
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    model_name: str | None = typer.Option(None, help="Specific model to check"),
+) -> None:
+    """Show MLOps registry status and model versions."""
+    run_mlops_status_command(registry_path, model_name)
+
+
+@app.command()
+def deploy_model(
+    version_id: str = typer.Option(..., help="Model version ID to deploy"),
+    environment: str = typer.Option(..., help="Target environment (staging, production)"),
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    traffic_percentage: float = typer.Option(100.0, help="Traffic percentage for deployment"),
+    approved_by: str = typer.Option("system", help="Who approved the deployment"),
+) -> None:
+    """Deploy a model version to an environment."""
+    run_deploy_model_command(
+        version_id, environment, registry_path, traffic_percentage, approved_by
+    )
+
+
+@app.command()
+def rollback_deployment(
+    environment: str = typer.Option(..., help="Environment to rollback"),
+    target_version: str = typer.Option(..., help="Target version ID to rollback to"),
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    reason: str = typer.Option("manual_rollback", help="Reason for rollback"),
+) -> None:
+    """Rollback a deployment to a previous version."""
+    run_rollback_deployment_command(
+        environment, target_version, registry_path, reason
+    )
+
+
+@app.command()
+def create_ab_test(
+    test_name: str = typer.Option(..., help="Name of the A/B test"),
+    model_versions: list[str] = typer.Option(..., help="List of model version IDs to compare"),
+    traffic_split: dict[str, float] = typer.Option(..., help="Traffic split as JSON dict"),
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    test_duration_days: int = typer.Option(14, help="Test duration in days"),
+    success_metrics: list[str] = typer.Option(["concordance", "ibs"], help="Success metrics to evaluate"),
+) -> None:
+    """Create an A/B test for model versions."""
+    run_create_ab_test_command(
+        test_name, model_versions, traffic_split, registry_path, test_duration_days, success_metrics
+    )
+
+
+@app.command()
+def ab_test_results(
+    test_id: str = typer.Option(..., help="A/B test ID"),
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+) -> None:
+    """Get results for an A/B test."""
+    run_ab_test_results_command(test_id, registry_path)
+
+
+@app.command()
+def check_retraining_triggers(
+    registry_path: Path = typer.Option(Path("results/mlops"), help="MLOps registry path"),  # noqa: B008
+    model_name: str | None = typer.Option(None, help="Specific model to check"),
+) -> None:
+    """Check if any retraining triggers should fire."""
+    run_check_retraining_triggers_command(registry_path, model_name)
+
+
+@app.command()
+def data_quality_profile(
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path | None = typer.Option(Path("data/toy/metadata.yaml"), help="Metadata file"),  # noqa: B008
+    output_dir: Path = typer.Option(Path("results/data_quality"), help="Output directory"),  # noqa: B008
+    include_anomaly_detection: bool = typer.Option(True, help="Include anomaly detection"),
+    output_format: str = typer.Option("html", help="Output format: html or json"),
+) -> None:
+    """Generate comprehensive data quality profile."""
+    run_data_quality_profile_command(
+        data, meta, output_dir, include_anomaly_detection, None, output_format
+    )
+
+
+@app.command()
+def data_validation(
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path | None = typer.Option(Path("data/toy/metadata.yaml"), help="Metadata file"),  # noqa: B008
+    validation_rules: str = typer.Option("default", help="Validation rules: default or custom"),
+    output_dir: Path = typer.Option(Path("results/data_validation"), help="Output directory"),  # noqa: B008
+    strict_mode: bool = typer.Option(False, help="Enable strict validation mode"),
+    fail_on_first_error: bool = typer.Option(False, help="Fail on first validation error"),
+) -> None:
+    """Validate dataset against configured rules."""
+    run_data_validation_command(
+        data, meta, validation_rules, output_dir, strict_mode, fail_on_first_error
+    )
+
+
+@app.command()
+def data_cleansing(
+    data: Path = typer.Option(Path("data/toy/toy_survival.csv"), exists=True),  # noqa: B008
+    meta: Path | None = typer.Option(Path("data/toy/metadata.yaml"), help="Metadata file"),  # noqa: B008
+    output_dir: Path = typer.Option(Path("results/data_cleansing"), help="Output directory"),  # noqa: B008
+    remove_duplicates: bool = typer.Option(True, help="Remove duplicate rows"),
+    handle_outliers: bool = typer.Option(True, help="Handle outliers"),
+    preserve_original: bool = typer.Option(True, help="Preserve original data"),
+) -> None:
+    """Cleanse dataset based on quality assessment."""
+    run_data_cleansing_command(
+        data, meta, output_dir, remove_duplicates, handle_outliers, preserve_original
     )
 
 

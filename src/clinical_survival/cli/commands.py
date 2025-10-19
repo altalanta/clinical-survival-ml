@@ -56,6 +56,35 @@ from clinical_survival.distributed import (
     create_distributed_config,
     load_distributed_config,
 )
+from clinical_survival.clinical_interpretability import (
+    ClinicalDecisionSupport,
+    create_clinical_interpretability_config,
+    save_clinical_report,
+)
+from clinical_survival.mlops import (
+    ABTestManager,
+    AutomatedRetrainer,
+    DeploymentEnvironment,
+    DeploymentManager,
+    ModelRegistry,
+    ModelVersion,
+    RetrainingTrigger,
+    create_mlops_config,
+    initialize_mlops_system,
+    load_mlops_config,
+)
+from clinical_survival.data_quality import (
+    DataCleansingPipeline,
+    DataQualityMonitor,
+    DataQualityProfiler,
+    DataQualityReport,
+    DataQualityMetrics,
+    DataValidator,
+    ValidationRule,
+    create_data_quality_config,
+    create_validation_rules,
+    save_data_quality_report,
+)
 from clinical_survival.utils import (
     ensure_dir,
     load_json,
@@ -1864,3 +1893,814 @@ def run_configure_distributed_command(
     typer.echo(f"   Number of partitions: {n_partitions}")
 
     typer.echo("\n🎉 Distributed computing configuration completed!")
+
+
+def run_clinical_interpret_command(
+    config_path: Path,
+    data_path: Path,
+    meta_path: Path,
+    model_path: Path,
+    output_dir: Path = Path("results/clinical_interpretability"),
+    patient_ids: list[str] | None = None,
+    risk_thresholds: dict[str, float] | None = None,
+    include_detailed_analysis: bool = True,
+    output_format: str = "html",
+) -> None:
+    """Generate comprehensive clinical interpretability report."""
+    log_function_call("run_clinical_interpret_command", {
+        "config_path": str(config_path),
+        "data_path": str(data_path),
+        "meta_path": str(meta_path),
+        "model_path": str(model_path),
+        "output_dir": str(output_dir),
+        "patient_ids": patient_ids,
+        "risk_thresholds": risk_thresholds,
+        "include_detailed_analysis": include_detailed_analysis,
+        "output_format": output_format
+    })
+
+    typer.echo("🩺 Starting clinical interpretability analysis...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Load model
+    typer.echo(f"📥 Loading model from {model_path}...")
+    import joblib
+    model = joblib.load(model_path)
+    typer.echo("✅ Model loaded")
+
+    # Load data for interpretation
+    typer.echo("📊 Loading data for interpretation...")
+    try:
+        X, y = load_dataset(data_path, meta_path, params["time_col"], params["event_col"])
+        typer.echo(f"✅ Loaded {len(X)} samples for interpretation")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # Filter to specific patients if requested
+    if patient_ids:
+        X = X[X.index.isin(patient_ids)]
+        typer.echo(f"🔍 Filtered to {len(X)} specified patients")
+
+    if len(X) == 0:
+        typer.echo("❌ No patients to analyze")
+        return
+
+    # Create clinical context
+    clinical_context = {
+        "feature_domains": {
+            "age": "demographics",
+            "sex": "demographics",
+            "sofa": "vitals",
+            "stage": "comorbidities",
+            "creatinine": "labs",
+            "bilirubin": "labs"
+        },
+        "risk_categories": {
+            "protective": ["age", "sex"],
+            "risk_factor": ["sofa", "stage", "creatinine", "bilirubin"],
+            "neutral": []
+        }
+    }
+
+    # Initialize clinical decision support system
+    typer.echo("🔬 Initializing clinical decision support system...")
+    cds = ClinicalDecisionSupport(model, clinical_context)
+
+    # Use subset of data as background for SHAP
+    X_background = X.sample(n=min(100, len(X)), random_state=42) if len(X) > 100 else X
+
+    # Initialize explainers
+    cds.initialize_explainers(X_background, list(X.columns))
+
+    # Generate comprehensive clinical report
+    typer.echo("🎯 Generating clinical interpretability report...")
+    report = cds.generate_clinical_report(
+        X,
+        patient_ids=patient_ids,
+        include_detailed_analysis=include_detailed_analysis
+    )
+
+    # Save report
+    ensure_dir(output_dir)
+
+    if output_format.lower() == "html":
+        report_file = output_dir / "clinical_interpretability_report.html"
+        save_clinical_report(report, report_file, format="html")
+        typer.echo(f"💾 HTML report saved to {report_file}")
+    else:
+        report_file = output_dir / "clinical_interpretability_report.json"
+        save_clinical_report(report, report_file, format="json")
+        typer.echo(f"💾 JSON report saved to {report_file}")
+
+    # Display summary
+    summary = report["summary"]
+    typer.echo("
+📊 Report Summary:"    typer.echo(f"   Total patients analyzed: {summary['total_patients']}")
+    typer.echo(f"   Average risk score: {summary['average_risk_score']".3f"}")
+    typer.echo(f"   Risk distribution: Low={summary['risk_distribution']['low']}, "
+               f"Moderate={summary['risk_distribution']['moderate']}, "
+               f"High={summary['risk_distribution']['high']}, "
+               f"Very High={summary['risk_distribution']['very_high']}")
+    typer.echo(f"   Critical urgency patients: {summary['critical_urgency_patients']}")
+
+    # Display population insights
+    if report["population_insights"]:
+        insights = report["population_insights"]
+        typer.echo("
+🔍 Population Insights:"        typer.echo(f"   Top risk features: {', '.join(insights.get('top_risk_features', [])[:3])}")
+
+        if "risk_factor_prevalence" in insights:
+            for feature, prevalence in list(insights["risk_factor_prevalence"].items())[:3]:
+                typer.echo(f"   {feature}: {prevalence".1%"} of patients")
+
+    typer.echo("
+🎉 Clinical interpretability analysis completed!"
+def run_risk_stratification_command(
+    config_path: Path,
+    data_path: Path,
+    meta_path: Path,
+    model_path: Path,
+    output_dir: Path = Path("results/risk_stratification"),
+    risk_thresholds: dict[str, float] | None = None,
+) -> None:
+    """Generate risk stratification report."""
+    log_function_call("run_risk_stratification_command", {
+        "config_path": str(config_path),
+        "data_path": str(data_path),
+        "meta_path": str(meta_path),
+        "model_path": str(model_path),
+        "output_dir": str(output_dir),
+        "risk_thresholds": risk_thresholds
+    })
+
+    typer.echo("🏥 Starting risk stratification analysis...")
+
+    # Load configuration
+    params = load_yaml(config_path)
+
+    # Load model
+    typer.echo(f"📥 Loading model from {model_path}...")
+    import joblib
+    model = joblib.load(model_path)
+    typer.echo("✅ Model loaded")
+
+    # Load data
+    typer.echo("📊 Loading data for stratification...")
+    try:
+        X, y = load_dataset(data_path, meta_path, params["time_col"], params["event_col"])
+        typer.echo(f"✅ Loaded {len(X)} samples for stratification")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # Initialize risk stratifier
+    from clinical_survival.clinical_interpretability import RiskStratifier
+
+    risk_stratifier = RiskStratifier(
+        model,
+        risk_thresholds=risk_thresholds,
+        clinical_context={}
+    )
+
+    # Generate stratifications
+    typer.echo("📈 Stratifying patients by risk...")
+    stratifications = risk_stratifier.stratify_patients(X)
+
+    # Save results
+    ensure_dir(output_dir)
+
+    # Convert to serializable format
+    serializable_stratifications = []
+    for stratification in stratifications:
+        serializable_stratifications.append({
+            "patient_id": stratification.patient_id,
+            "risk_score": stratification.risk_score,
+            "risk_category": stratification.risk_category,
+            "confidence_interval": stratification.confidence_interval,
+            "primary_risk_factors": stratification.primary_risk_factors,
+            "protective_factors": stratification.protective_factors,
+            "clinical_recommendations": stratification.clinical_recommendations,
+            "urgency_level": stratification.urgency_level
+        })
+
+    results_file = output_dir / "risk_stratification_results.json"
+    save_json(serializable_stratifications, results_file)
+
+    # Display summary
+    risk_categories = [s.risk_category for s in stratifications]
+    urgency_levels = [s.urgency_level for s in stratifications]
+
+    typer.echo("
+📊 Risk Stratification Summary:"    typer.echo(f"   Total patients: {len(stratifications)}")
+    typer.echo(f"   Risk categories: Low={risk_categories.count('low')}, "
+               f"Moderate={risk_categories.count('moderate')}, "
+               f"High={risk_categories.count('high')}, "
+               f"Very High={risk_categories.count('very_high')}")
+    typer.echo(f"   Urgency levels: Routine={urgency_levels.count('routine')}, "
+               f"Urgent={urgency_levels.count('urgent')}, "
+               f"Critical={urgency_levels.count('critical')}")
+
+    # Display recommendations
+    all_recommendations = []
+    for stratification in stratifications:
+        all_recommendations.extend(stratification.clinical_recommendations)
+
+    if all_recommendations:
+        from collections import Counter
+        common_recommendations = Counter(all_recommendations).most_common(3)
+        typer.echo("
+💡 Top Clinical Recommendations:"        for rec, count in common_recommendations:
+            typer.echo(f"   • {rec} ({count} patients)")
+
+    typer.echo(f"\n💾 Results saved to {results_file}")
+    typer.echo("🎉 Risk stratification analysis completed!"
+
+
+def run_data_quality_profile_command(
+    data_path: Path,
+    meta_path: Path | None = None,
+    output_dir: Path = Path("results/data_quality"),
+    include_anomaly_detection: bool = True,
+    clinical_context: dict[str, Any] | None = None,
+    output_format: str = "html",
+) -> None:
+    """Generate comprehensive data quality profile."""
+    log_function_call("run_data_quality_profile_command", {
+        "data_path": str(data_path),
+        "meta_path": str(meta_path) if meta_path else None,
+        "output_dir": str(output_dir),
+        "include_anomaly_detection": include_anomaly_detection,
+        "clinical_context": clinical_context,
+        "output_format": output_format
+    })
+
+    typer.echo("🔍 Starting data quality profiling...")
+
+    # Load data
+    try:
+        if meta_path:
+            X, y = load_dataset(data_path, meta_path, "time", "event")
+            df = X  # Use features for profiling
+        else:
+            df = pd.read_csv(data_path)
+            # Remove time/event columns if present
+            df = df.drop(columns=["time", "event"], errors="ignore")
+
+        typer.echo(f"✅ Loaded dataset with {len(df)} rows and {len(df.columns)} columns")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # Create profiler
+    profiler = DataQualityProfiler()
+    clinical_context = clinical_context or {}
+
+    # Generate profile
+    typer.echo("📊 Generating data quality profile...")
+    report = profiler.profile_dataset(
+        df,
+        dataset_name=data_path.stem,
+        include_anomaly_detection=include_anomaly_detection,
+        clinical_context=clinical_context
+    )
+
+    # Save report
+    ensure_dir(output_dir)
+
+    if output_format.lower() == "html":
+        report_file = output_dir / "data_quality_report.html"
+        save_data_quality_report(report, report_file, format="html")
+        typer.echo(f"💾 HTML report saved to {report_file}")
+    else:
+        report_file = output_dir / "data_quality_report.json"
+        save_data_quality_report(report, report_file, format="json")
+        typer.echo(f"💾 JSON report saved to {report_file}")
+
+    # Display summary
+    metrics = report.quality_metrics
+    typer.echo("
+📊 Quality Summary:"    typer.echo(f"   Overall Score: {metrics.overall_quality_score".1f"} ({metrics.quality_grade})")
+    typer.echo(f"   Missing Values: {metrics.missing_values_percentage".1f"}%")
+    typer.echo(f"   Duplicates: {metrics.duplicate_rows_percentage".1f"}%")
+    typer.echo(f"   Issues Found: {len(report.issues_found)}")
+
+    if report.recommendations:
+        typer.echo("
+💡 Recommendations:"        for rec in report.recommendations[:3]:  # Show top 3
+            typer.echo(f"   • {rec}")
+
+    typer.echo("
+🎉 Data quality profiling completed!"
+def run_data_validation_command(
+    data_path: Path,
+    meta_path: Path | None = None,
+    validation_rules: list[str] | None = None,
+    output_dir: Path = Path("results/data_validation"),
+    strict_mode: bool = False,
+    fail_on_first_error: bool = False,
+) -> None:
+    """Validate dataset against configured rules."""
+    log_function_call("run_data_validation_command", {
+        "data_path": str(data_path),
+        "meta_path": str(meta_path) if meta_path else None,
+        "validation_rules": validation_rules,
+        "output_dir": str(output_dir),
+        "strict_mode": strict_mode,
+        "fail_on_first_error": fail_on_first_error
+    })
+
+    typer.echo("✅ Starting data validation...")
+
+    # Load data
+    try:
+        if meta_path:
+            X, y = load_dataset(data_path, meta_path, "time", "event")
+            df = X  # Use features for validation
+        else:
+            df = pd.read_csv(data_path)
+            # Remove time/event columns if present
+            df = df.drop(columns=["time", "event"], errors="ignore")
+
+        typer.echo(f"✅ Loaded dataset with {len(df)} rows and {len(df.columns)} columns")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # Create validation rules
+    if validation_rules == "default" or validation_rules is None:
+        rules = create_validation_rules()
+    else:
+        # Custom rules would be loaded here
+        rules = create_validation_rules()  # Placeholder
+
+    typer.echo(f"📋 Validating against {len(rules)} rules...")
+
+    # Create validator
+    validator = DataValidator(rules)
+
+    # Validate dataset
+    result = validator.validate_dataset(df, dataset_name=data_path.stem)
+
+    # Save validation results
+    ensure_dir(output_dir)
+    results_file = output_dir / "validation_results.json"
+    save_json(result, results_file)
+
+    # Display results
+    typer.echo("
+📊 Validation Results:"    typer.echo(f"   Status: {result['overall_status']}")
+    typer.echo(f"   Total Rules: {result['total_rules']}")
+    typer.echo(f"   Passed: {result['passed_rules']}")
+    typer.echo(f"   Failed: {result['failed_rules']}")
+
+    if result['errors']:
+        typer.echo("
+❌ Errors:"        for error in result['errors']:
+            typer.echo(f"   • {error}")
+
+    if result['warnings']:
+        typer.echo("
+⚠️  Warnings:"        for warning in result['warnings']:
+            typer.echo(f"   • {warning}")
+
+    if result['overall_status'] == 'failed':
+        if fail_on_first_error:
+            raise typer.Exit("❌ Data validation failed")
+        else:
+            typer.echo("
+⚠️  Validation completed with errors"
+    else:
+        typer.echo("
+✅ Validation passed!"
+    typer.echo(f"💾 Results saved to {results_file}")
+    typer.echo("🎉 Data validation completed!"
+
+
+def run_data_cleansing_command(
+    data_path: Path,
+    meta_path: Path | None = None,
+    output_dir: Path = Path("results/data_cleansing"),
+    remove_duplicates: bool = True,
+    handle_outliers: bool = True,
+    preserve_original: bool = True,
+) -> None:
+    """Cleanse dataset based on quality assessment."""
+    log_function_call("run_data_cleansing_command", {
+        "data_path": str(data_path),
+        "meta_path": str(meta_path) if meta_path else None,
+        "output_dir": str(output_dir),
+        "remove_duplicates": remove_duplicates,
+        "handle_outliers": handle_outliers,
+        "preserve_original": preserve_original
+    })
+
+    typer.echo("🧹 Starting data cleansing...")
+
+    # Load data
+    try:
+        if meta_path:
+            X, y = load_dataset(data_path, meta_path, "time", "event")
+            df = X  # Use features for cleansing
+        else:
+            df = pd.read_csv(data_path)
+            # Remove time/event columns if present
+            df = df.drop(columns=["time", "event"], errors="ignore")
+
+        typer.echo(f"✅ Loaded dataset with {len(df)} rows and {len(df.columns)} columns")
+    except Exception as e:
+        log_error_with_context(e, f"loading dataset {data_path}")
+        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+
+    # First, profile the data to understand quality issues
+    typer.echo("📊 Profiling data quality...")
+    profiler = DataQualityProfiler()
+    quality_report = profiler.profile_dataset(df, dataset_name=data_path.stem)
+
+    # Create cleansing pipeline
+    cleansing_config = {
+        "remove_duplicates": remove_duplicates,
+        "missing_values_strategy": "auto",
+        "handle_outliers": handle_outliers,
+        "preserve_original": preserve_original
+    }
+
+    pipeline = DataCleansingPipeline(cleansing_config)
+
+    # Cleanse data
+    typer.echo("🔧 Applying data cleansing...")
+    df_clean, cleansing_summary = pipeline.cleanse_dataset(df, quality_report, preserve_original)
+
+    # Save results
+    ensure_dir(output_dir)
+
+    # Save cleaned data
+    cleaned_data_path = output_dir / f"cleaned_{data_path.name}"
+    df_clean.to_csv(cleaned_data_path, index=False)
+    typer.echo(f"💾 Cleaned data saved to {cleaned_data_path}")
+
+    # Save cleansing summary
+    summary_file = output_dir / "cleansing_summary.json"
+    save_json(cleansing_summary, summary_file)
+    typer.echo(f"📊 Cleansing summary saved to {summary_file}")
+
+    # Display results
+    typer.echo("
+📊 Cleansing Results:"    typer.echo(f"   Original shape: {cleansing_summary['original_shape']}")
+    typer.echo(f"   Final shape: {cleansing_summary['final_shape']}")
+    typer.echo(f"   Rows removed: {cleansing_summary['rows_removed']}")
+    typer.echo(f"   Columns removed: {cleansing_summary['columns_removed']}")
+
+    if cleansing_summary['cleansing_steps']:
+        typer.echo("
+🔧 Applied cleansing steps:"        for step in cleansing_summary['cleansing_steps']:
+            typer.echo(f"   • {step}")
+
+    typer.echo("
+🎉 Data cleansing completed!"
+
+
+def run_register_model_command(
+    model_path: Path,
+    model_name: str,
+    version_number: str,
+    description: str = "",
+    tags: list[str] = None,
+    registry_path: Path = Path("results/mlops"),
+    created_by: str = "system",
+) -> None:
+    """Register a trained model in the MLOps registry."""
+    log_function_call("run_register_model_command", {
+        "model_path": str(model_path),
+        "model_name": model_name,
+        "version_number": version_number,
+        "description": description,
+        "tags": tags,
+        "registry_path": str(registry_path),
+        "created_by": created_by
+    })
+
+    typer.echo("📦 Registering model in MLOps registry...")
+
+    # Load model
+    typer.echo(f"📥 Loading model from {model_path}...")
+    import joblib
+    model = joblib.load(model_path)
+    typer.echo("✅ Model loaded")
+
+    # Initialize registry
+    registry = ModelRegistry(registry_path)
+
+    # Register model
+    version = registry.register_model(
+        model=model,
+        model_name=model_name,
+        version_number=version_number,
+        created_by=created_by,
+        description=description,
+        tags=tags or []
+    )
+
+    typer.echo(f"✅ Model registered successfully!"    typer.echo(f"   Model: {model_name}")
+    typer.echo(f"   Version: {version_number}")
+    typer.echo(f"   Version ID: {version.version_id}")
+    typer.echo(f"   Status: {version.status}")
+    typer.echo(f"   Model type: {version.model_type}")
+
+    typer.echo("\n🎉 Model registration completed!")
+
+
+def run_mlops_status_command(
+    registry_path: Path = Path("results/mlops"),
+    model_name: str | None = None,
+) -> None:
+    """Show MLOps registry status and model versions."""
+    log_function_call("run_mlops_status_command", {
+        "registry_path": str(registry_path),
+        "model_name": model_name
+    })
+
+    typer.echo("📊 Checking MLOps registry status...")
+
+    # Initialize registry
+    registry = ModelRegistry(registry_path)
+
+    # Get all models or specific model
+    if model_name:
+        models_to_check = [model_name]
+    else:
+        models_to_check = list(registry._models.keys())
+
+    if not models_to_check:
+        typer.echo("ℹ️  No models found in registry")
+        return
+
+    typer.echo(f"\n🔍 Registry Status for {len(models_to_check)} models:")
+
+    for current_model_name in models_to_check:
+        typer.echo(f"\n📈 Model: {current_model_name}")
+
+        # Get all versions
+        versions = registry.get_model_versions(current_model_name)
+
+        if not versions:
+            typer.echo("   No versions found")
+            continue
+
+        typer.echo(f"   Total versions: {len(versions)}")
+
+        # Show latest version
+        latest_version = registry.get_latest_version(current_model_name)
+        if latest_version:
+            typer.echo(f"   Latest version: {latest_version.version_number}")
+            typer.echo(f"   Status: {latest_version.status}")
+            typer.echo(f"   Created: {latest_version.created_at.strftime('%Y-%m-%d %H:%M')}")
+
+            if latest_version.performance_metrics:
+                typer.echo("   Performance metrics:"                for metric, value in latest_version.performance_metrics.items():
+                    typer.echo(f"     {metric}: {value".4f"}")
+
+        # Show all versions
+        typer.echo("   All versions:"        for version in versions:
+            status_icon = "✅" if version.status == "production" else "🔄" if version.status == "staging" else "📋"
+            typer.echo(f"     {status_icon} {version.version_number} ({version.created_at.strftime('%Y-%m-%d')}) - {version.status}")
+
+    typer.echo("\n✅ MLOps status check completed!")
+
+
+def run_deploy_model_command(
+    version_id: str,
+    environment_name: str,
+    registry_path: Path = Path("results/mlops"),
+    traffic_percentage: float = 100.0,
+    approved_by: str = "system",
+) -> None:
+    """Deploy a model version to an environment."""
+    log_function_call("run_deploy_model_command", {
+        "version_id": version_id,
+        "environment_name": environment_name,
+        "registry_path": str(registry_path),
+        "traffic_percentage": traffic_percentage,
+        "approved_by": approved_by
+    })
+
+    typer.echo(f"🚀 Deploying model version {version_id} to {environment_name}...")
+
+    # Initialize MLOps system
+    config = create_mlops_config(registry_path)
+    registry, auto_retrainer, deployment_manager, ab_test_manager = initialize_mlops_system(config)
+
+    # Deploy model
+    success = deployment_manager.deploy_model(
+        version_id=version_id,
+        environment_name=environment_name,
+        traffic_percentage=traffic_percentage,
+        approved_by=approved_by
+    )
+
+    if success:
+        typer.echo("✅ Model deployed successfully!"        typer.echo(f"   Version ID: {version_id}")
+        typer.echo(f"   Environment: {environment_name}")
+        typer.echo(f"   Traffic percentage: {traffic_percentage}%")
+
+        # Show deployment status
+        status = deployment_manager.get_deployment_status(environment_name)
+        if "current_version" in status:
+            current = status["current_version"]
+            typer.echo(f"   Deployed at: {current['deployed_at'].strftime('%Y-%m-%d %H:%M')}")
+            typer.echo(f"   Version: {current['version_number']}")
+
+    else:
+        typer.echo("❌ Model deployment failed")
+        raise typer.Exit(1)
+
+    typer.echo("\n🎉 Model deployment completed!")
+
+
+def run_rollback_deployment_command(
+    environment_name: str,
+    target_version_id: str,
+    registry_path: Path = Path("results/mlops"),
+    reason: str = "manual_rollback",
+) -> None:
+    """Rollback a deployment to a previous version."""
+    log_function_call("run_rollback_deployment_command", {
+        "environment_name": environment_name,
+        "target_version_id": target_version_id,
+        "registry_path": str(registry_path),
+        "reason": reason
+    })
+
+    typer.echo(f"🔄 Rolling back deployment in {environment_name} to version {target_version_id}...")
+
+    # Initialize MLOps system
+    config = create_mlops_config(registry_path)
+    registry, auto_retrainer, deployment_manager, ab_test_manager = initialize_mlops_system(config)
+
+    # Rollback deployment
+    success = deployment_manager.rollback_deployment(
+        environment_name=environment_name,
+        target_version_id=target_version_id,
+        reason=reason
+    )
+
+    if success:
+        typer.echo("✅ Deployment rollback completed successfully!"        typer.echo(f"   Environment: {environment_name}")
+        typer.echo(f"   Target version: {target_version_id}")
+        typer.echo(f"   Reason: {reason}")
+
+        # Show updated deployment status
+        status = deployment_manager.get_deployment_status(environment_name)
+        if "current_version" in status:
+            current = status["current_version"]
+            typer.echo(f"   New active version: {current['version_number']}")
+
+    else:
+        typer.echo("❌ Deployment rollback failed")
+        raise typer.Exit(1)
+
+    typer.echo("\n🎉 Deployment rollback completed!")
+
+
+def run_create_ab_test_command(
+    test_name: str,
+    model_versions: list[str],
+    traffic_split: dict[str, float],
+    registry_path: Path = Path("results/mlops"),
+    test_duration_days: int = 14,
+    success_metrics: list[str] = None,
+) -> None:
+    """Create an A/B test for model versions."""
+    log_function_call("run_create_ab_test_command", {
+        "test_name": test_name,
+        "model_versions": model_versions,
+        "traffic_split": traffic_split,
+        "registry_path": str(registry_path),
+        "test_duration_days": test_duration_days,
+        "success_metrics": success_metrics
+    })
+
+    typer.echo(f"🧪 Creating A/B test '{test_name}'...")
+
+    # Initialize MLOps system
+    config = create_mlops_config(registry_path)
+    registry, auto_retrainer, deployment_manager, ab_test_manager = initialize_mlops_system(config)
+
+    # Create A/B test
+    try:
+        test_id = ab_test_manager.create_ab_test(
+            test_name=test_name,
+            model_versions=model_versions,
+            traffic_split=traffic_split,
+            test_duration_days=test_duration_days,
+            success_metrics=success_metrics or ["concordance", "ibs"]
+        )
+
+        typer.echo("✅ A/B test created successfully!"        typer.echo(f"   Test ID: {test_id}")
+        typer.echo(f"   Test name: {test_name}")
+        typer.echo(f"   Model versions: {', '.join(model_versions)}")
+        typer.echo(f"   Duration: {test_duration_days} days")
+        typer.echo(f"   Traffic split: {traffic_split}")
+
+        # Show traffic allocation
+        typer.echo("   Traffic allocation:"        for version_id, percentage in traffic_split.items():
+            version = registry.get_version(version_id)
+            if version:
+                typer.echo(f"     {version.version_number}: {percentage*100".1f"}%")
+
+    except ValueError as e:
+        typer.echo(f"❌ Failed to create A/B test: {e}")
+        raise typer.Exit(1)
+
+    typer.echo("\n🎉 A/B test creation completed!")
+
+
+def run_ab_test_results_command(
+    test_id: str,
+    registry_path: Path = Path("results/mlops"),
+) -> None:
+    """Get results for an A/B test."""
+    log_function_call("run_ab_test_results_command", {
+        "test_id": test_id,
+        "registry_path": str(registry_path)
+    })
+
+    typer.echo(f"📊 Getting results for A/B test {test_id}...")
+
+    # Initialize MLOps system
+    config = create_mlops_config(registry_path)
+    registry, auto_retrainer, deployment_manager, ab_test_manager = initialize_mlops_system(config)
+
+    # Get test results
+    results = ab_test_manager.get_test_results(test_id)
+
+    if "error" in results:
+        typer.echo(f"❌ A/B test not found: {results['error']}")
+        return
+
+    typer.echo("✅ A/B test results:"    typer.echo(f"   Test: {results['test_name']}")
+    typer.echo(f"   Status: {results['status']}")
+    typer.echo(f"   Duration: {results['duration_days']} days")
+
+    # Show version results
+    if "version_results" in results:
+        typer.echo("   Version performance:"        for version_id, version_data in results["version_results"].items():
+            version = registry.get_version(version_id)
+            if version:
+                typer.echo(f"     {version.version_number}:"                typer.echo(f"       Traffic: {version.traffic_percentage*100".1f"}%")
+                if version_data["performance_metrics"]:
+                    for metric, value in version_data["performance_metrics"].items():
+                        typer.echo(f"       {metric}: {value".4f"}")
+
+    # Show statistical significance
+    if "statistical_significance" in results:
+        sig = results["statistical_significance"]
+        typer.echo("   Statistical analysis:"        for metric, p_value in sig.items():
+            if metric.endswith("_p_value"):
+                metric_name = metric.replace("_p_value", "")
+                significance = "significant" if p_value < 0.05 else "not significant"
+                typer.echo(f"     {metric_name}: p-value = {p_value".4f"} ({significance})")
+
+    typer.echo("\n🎉 A/B test results retrieved!")
+
+
+def run_check_retraining_triggers_command(
+    registry_path: Path = Path("results/mlops"),
+    model_name: str | None = None,
+) -> None:
+    """Check if any retraining triggers should fire."""
+    log_function_call("run_check_retraining_triggers_command", {
+        "registry_path": str(registry_path),
+        "model_name": model_name
+    })
+
+    typer.echo("🔄 Checking retraining triggers...")
+
+    # Initialize MLOps system
+    config = create_mlops_config(registry_path)
+    registry, auto_retrainer, deployment_manager, ab_test_manager = initialize_mlops_system(config)
+
+    # Check triggers
+    triggered_models = auto_retrainer.check_triggers()
+
+    if model_name:
+        triggered_models = [m for m in triggered_models if m == model_name]
+
+    if not triggered_models:
+        typer.echo("ℹ️  No retraining triggers activated")
+        return
+
+    typer.echo(f"🚨 Retraining triggers activated for {len(triggered_models)} models:")
+    for model in triggered_models:
+        typer.echo(f"   • {model}")
+
+        # Show which triggers fired
+        for trigger in auto_retrainer.triggers:
+            if trigger.enabled and model in auto_retrainer._get_models_for_trigger(trigger):
+                typer.echo(f"     - {trigger.trigger_name} ({trigger.trigger_type})")
+
+    typer.echo("
+💡 Recommendation: Run model retraining for the triggered models"
+    typer.echo("\n🎉 Trigger check completed!"

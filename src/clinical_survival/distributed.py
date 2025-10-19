@@ -778,3 +778,4 @@ def load_distributed_config(config_path: Path) -> DistributedConfig:
     except Exception as e:
         logger.error(f"Failed to load distributed config: {e}")
         return DistributedConfig()  # Return default config
+

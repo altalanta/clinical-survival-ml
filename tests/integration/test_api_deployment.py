@@ -296,3 +296,4 @@ class TestAPIDeployment:
         # The server should have logging capabilities
         # This is verified by the function existing and being callable
         assert callable(run_server)
+
