@@ -469,3 +469,4 @@ def load_incremental_learning_config(config_path: Path) -> IncrementalUpdateConf
     except Exception as e:
         logger.error(f"Failed to load incremental learning config: {e}")
         return IncrementalUpdateConfig()  # Return default config
+

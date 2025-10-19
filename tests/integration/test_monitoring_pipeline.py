@@ -376,3 +376,4 @@ class TestMonitoringPipeline:
             all_files = list(monitoring_dir.glob("*"))
             # Should not accumulate too many files (depends on implementation)
             assert len(all_files) < 100  # Reasonable upper bound
+

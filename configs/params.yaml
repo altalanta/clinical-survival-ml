@@ -68,3 +68,67 @@ distributed_computing:
   n_partitions: 10
   scheduler_address: "127.0.0.1:8786"
   dashboard_address: "127.0.0.1:8787"
+clinical_interpretability:
+  enabled: true
+  risk_thresholds:
+    low: 0.2
+    moderate: 0.4
+    high: 0.7
+    very_high: 1.0
+  clinical_context:
+    feature_domains:
+      age: "demographics"
+      sex: "demographics"
+      sofa: "vitals"
+      stage: "comorbidities"
+      creatinine: "labs"
+      bilirubin: "labs"
+    risk_categories:
+      protective: ["age", "sex"]
+      risk_factor: ["sofa", "stage", "creatinine", "bilirubin"]
+      neutral: []
+  explanation_features:
+    include_shap_values: true
+    include_clinical_interpretation: true
+    include_risk_stratification: true
+    include_recommendations: true
+    include_confidence_scores: true
+mlops:
+  enabled: true
+  registry_path: "results/mlops"
+  environments:
+    development:
+      type: "development"
+      auto_rollback: false
+      rollback_threshold: 0.1
+    staging:
+      type: "staging"
+      auto_rollback: true
+      rollback_threshold: 0.05
+    production:
+      type: "production"
+      auto_rollback: true
+      rollback_threshold: 0.02
+  triggers:
+    daily_retrain:
+      enabled: true
+      trigger_type: "scheduled"
+      schedule_cron: "0 2 * * *"
+      require_approval: true
+    performance_monitor:
+      enabled: true
+      trigger_type: "performance"
+      performance_threshold: 0.05
+      auto_retrain: false
+      require_approval: true
+    drift_detection:
+      enabled: true
+      trigger_type: "drift"
+      drift_threshold: 0.1
+      auto_retrain: false
+      require_approval: true
+  deployment_settings:
+    require_approval_for_production: true
+    auto_rollback_on_failure: true
+    max_concurrent_deployments: 3
+    deployment_timeout_minutes: 30

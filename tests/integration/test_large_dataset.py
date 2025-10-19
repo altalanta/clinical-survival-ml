@@ -370,3 +370,4 @@ class TestLargeDatasetScalability:
         # Both should complete successfully
         assert result1.exit_code == 0
         assert result2.exit_code == 0
+

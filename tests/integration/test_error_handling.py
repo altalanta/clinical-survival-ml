@@ -595,3 +595,4 @@ class TestErrorHandling:
 
         # Should handle version issues gracefully (if any exist)
         assert result.exit_code in [0, 1]
+

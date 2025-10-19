@@ -576,6 +576,492 @@ Distributed computing integrates seamlessly with:
 
 This enables processing of enterprise-scale clinical datasets (100k+ patients) while maintaining the same simple interface and comprehensive evaluation capabilities.
 
+## Advanced Clinical Interpretability & Decision Support
+
+The toolkit provides advanced interpretability tools specifically designed for clinical decision support and regulatory compliance:
+
+### Clinical Interpretability Features
+
+- **Enhanced SHAP Integration**: Clinical context-aware SHAP explanations with medical domain knowledge
+- **Risk Stratification**: Automated patient categorization with urgency levels and clinical recommendations
+- **Clinical Decision Support**: Comprehensive reports with actionable clinical insights
+- **Interactive HTML Reports**: Web-based dashboards for clinical review and decision-making
+- **Population Insights**: Aggregate analysis of risk factors and treatment patterns
+- **Regulatory Compliance**: Documentation and audit trails for healthcare AI requirements
+
+### Clinical Interpretability Configuration
+
+Configure clinical interpretability in your main configuration:
+
+```yaml
+# In configs/params.yaml
+clinical_interpretability:
+  enabled: true
+  risk_thresholds:
+    low: 0.2
+    moderate: 0.4
+    high: 0.7
+    very_high: 1.0
+  clinical_context:
+    feature_domains:
+      age: "demographics"
+      sex: "demographics"
+      sofa: "vitals"
+      stage: "comorbidities"
+      creatinine: "labs"
+      bilirubin: "labs"
+    risk_categories:
+      protective: ["age", "sex"]
+      risk_factor: ["sofa", "stage", "creatinine", "bilirubin"]
+      neutral: []
+  explanation_features:
+    include_shap_values: true
+    include_clinical_interpretation: true
+    include_risk_stratification: true
+    include_recommendations: true
+    include_confidence_scores: true
+```
+
+### Clinical Interpretability Usage
+
+```bash
+# Generate comprehensive clinical interpretability report (HTML format)
+clinical-ml clinical-interpret \
+  --config configs/params.yaml \
+  --data data/patient_data.csv \
+  --meta data/metadata.yaml \
+  --model results/artifacts/models/coxph.pkl \
+  --output-dir results/clinical_reports \
+  --output-format html \
+  --patient-ids patient_001 patient_002 patient_003
+
+# Generate risk stratification report
+clinical-ml risk-stratification \
+  --config configs/params.yaml \
+  --data data/patient_data.csv \
+  --meta data/metadata.yaml \
+  --model results/artifacts/models/coxph.pkl \
+  --output-dir results/risk_analysis
+```
+
+### Clinical Interpretability Outputs
+
+The clinical interpretability system generates:
+- `results/clinical_interpretability/clinical_interpretability_report.html`: Interactive HTML dashboard with patient-specific explanations
+- `results/clinical_interpretability/clinical_interpretability_report.json`: Detailed JSON report for programmatic analysis
+- `results/risk_stratification/risk_stratification_results.json`: Patient risk stratification with clinical recommendations
+
+### Enhanced SHAP Explanations
+
+The system provides enhanced SHAP explanations with:
+- **Clinical Context**: Medical domain mapping for features (demographics, vitals, labs, comorbidities)
+- **Risk Categorization**: Automatic risk level assessment with confidence intervals
+- **Feature Importance**: Domain-specific feature importance ranking
+- **Clinical Interpretation**: Natural language explanations of model predictions
+- **Actionable Insights**: Specific clinical recommendations based on risk factors
+
+### Risk Stratification System
+
+Automated patient risk stratification includes:
+- **Risk Categories**: Low, moderate, high, very high with configurable thresholds
+- **Urgency Levels**: Routine, urgent, critical based on risk factors and clinical context
+- **Clinical Recommendations**: Evidence-based recommendations for each risk category
+- **Population Insights**: Aggregate analysis of risk patterns across patient cohorts
+- **Confidence Assessment**: Statistical confidence intervals for risk assessments
+
+### Clinical Decision Support Integration
+
+The system integrates with:
+- **Model Monitoring**: Automatic triggering of interpretability analysis for high-risk predictions
+- **Counterfactual Explanations**: "What-if" scenarios for treatment planning
+- **Population Health**: Aggregate insights for quality improvement initiatives
+- **Regulatory Compliance**: Documentation for healthcare AI regulatory requirements
+
+### Example Clinical Report Output
+
+```html
+<!-- Interactive HTML Report -->
+<div class="patient-card risk-high">
+    <h3>Patient ID: patient_001</h3>
+    <p><strong>Risk Category:</strong> HIGH</p>
+    <p><strong>Predicted Risk:</strong> 0.75</p>
+    <p><strong>Confidence:</strong> 0.85</p>
+
+    <div class="clinical-interpretation">
+        <h4>Clinical Interpretation</h4>
+        <p>High risk prediction (0.75) driven by elevated SOFA score and advanced disease stage</p>
+    </div>
+
+    <div class="key-findings">
+        <h4>Key Findings</h4>
+        <ul>
+            <li>Elevated SOFA score increases predicted risk</li>
+            <li>Advanced disease stage contributes significantly</li>
+        </ul>
+    </div>
+
+    <div class="recommendations">
+        <h4>Clinical Recommendations</h4>
+        <ul>
+            <li>Monitor organ function closely</li>
+            <li>Consider specialist consultation</li>
+            <li>Evaluate for clinical trial eligibility</li>
+        </ul>
+    </div>
+</div>
+```
+
+This advanced interpretability system transforms ML predictions into clinically actionable insights, enabling safer and more effective use of AI in healthcare settings.
+
+## Automated MLOps Pipeline & Model Lifecycle Management
+
+The toolkit provides a comprehensive MLOps system for production-ready model management, automated retraining, and deployment lifecycle management:
+
+### MLOps Features
+
+- **Model Registry**: Version control with metadata, performance metrics, and approval workflows
+- **Automated Retraining**: Scheduled model updates based on performance, drift, or data volume triggers
+- **Deployment Management**: Multi-environment deployment with traffic splitting and rollback capabilities
+- **A/B Testing Framework**: Statistical comparison of model versions with automated promotion
+- **Approval Workflows**: Configurable approval processes for production deployments
+- **Audit Trails**: Complete lifecycle tracking for regulatory compliance
+
+### MLOps Configuration
+
+Configure MLOps in your main configuration:
+
+```yaml
+# In configs/params.yaml
+mlops:
+  enabled: true
+  registry_path: "results/mlops"
+  environments:
+    development:
+      type: "development"
+      auto_rollback: false
+      rollback_threshold: 0.1
+    staging:
+      type: "staging"
+      auto_rollback: true
+      rollback_threshold: 0.05
+    production:
+      type: "production"
+      auto_rollback: true
+      rollback_threshold: 0.02
+  triggers:
+    daily_retrain:
+      enabled: true
+      trigger_type: "scheduled"
+      schedule_cron: "0 2 * * *"
+      require_approval: true
+    performance_monitor:
+      enabled: true
+      trigger_type: "performance"
+      performance_threshold: 0.05
+      auto_retrain: false
+      require_approval: true
+    drift_detection:
+      enabled: true
+      trigger_type: "drift"
+      drift_threshold: 0.1
+      auto_retrain: false
+      require_approval: true
+  deployment_settings:
+    require_approval_for_production: true
+    auto_rollback_on_failure: true
+    max_concurrent_deployments: 3
+    deployment_timeout_minutes: 30
+```
+
+### MLOps Usage
+
+```bash
+# Register a trained model in the MLOps registry
+clinical-ml register-model \
+  --model results/artifacts/models/coxph.pkl \
+  --model-name survival_model \
+  --version-number 1.0.0 \
+  --description "Cox PH survival model for clinical outcomes" \
+  --tags clinical,survival,coxph \
+  --registry-path results/mlops
+
+# Check MLOps registry status
+clinical-ml mlops-status \
+  --registry-path results/mlops \
+  --model-name survival_model
+
+# Deploy model to staging environment
+clinical-ml deploy-model \
+  --version-id abc123def456 \
+  --environment staging \
+  --traffic-percentage 50 \
+  --approved-by clinical_lead
+
+# Create A/B test between model versions
+clinical-ml create-ab-test \
+  --test-name "Model Comparison Study" \
+  --model-versions abc123 def456 \
+  --traffic-split '{"abc123": 0.7, "def456": 0.3}' \
+  --test-duration-days 14 \
+  --success-metrics concordance ibs
+
+# Check if retraining triggers should fire
+clinical-ml check-retraining-triggers \
+  --registry-path results/mlops \
+  --model-name survival_model
+
+# Rollback deployment if needed
+clinical-ml rollback-deployment \
+  --environment production \
+  --target-version abc123 \
+  --reason performance_degradation
+```
+
+### Model Lifecycle Management
+
+The MLOps system manages the complete model lifecycle:
+
+1. **Model Development**: Register initial model versions with metadata
+2. **Testing & Validation**: Deploy to staging for validation and A/B testing
+3. **Approval Process**: Require approval for production deployments
+4. **Production Deployment**: Deploy to production with traffic splitting
+5. **Monitoring & Drift Detection**: Continuous monitoring for performance and data drift
+6. **Automated Retraining**: Trigger retraining based on configured conditions
+7. **Version Management**: Track model lineage and relationships
+
+### Deployment Environments
+
+The system supports multiple deployment environments:
+
+- **Development**: Local testing and experimentation
+- **Staging**: Pre-production validation and testing
+- **Production**: Live clinical deployment with safety measures
+
+### Automated Retraining Triggers
+
+Models can be automatically retrained based on:
+
+- **Scheduled Triggers**: Time-based retraining (e.g., daily, weekly)
+- **Performance Triggers**: When model performance drops below thresholds
+- **Drift Triggers**: When data distribution changes significantly
+- **Data Volume Triggers**: When sufficient new data becomes available
+
+### A/B Testing Framework
+
+The system provides robust A/B testing capabilities:
+
+- **Statistical Significance**: Automatic calculation of statistical significance
+- **Traffic Splitting**: Configurable traffic allocation between versions
+- **Performance Monitoring**: Real-time performance comparison
+- **Automated Promotion**: Statistical winner determination and promotion
+
+### Integration with Monitoring
+
+The MLOps system integrates seamlessly with:
+
+- **Performance Monitoring**: Automatic trigger activation based on performance metrics
+- **Drift Detection**: Automated retraining when data drift is detected
+- **Clinical Interpretability**: Enhanced explanations for production models
+- **Incremental Learning**: Distributed model updates in production
+
+### MLOps Outputs
+
+The MLOps system generates:
+- `results/mlops/models.json`: Model registry metadata
+- `results/mlops/versions.json`: Version-specific information
+- `results/mlops/deployments/`: Deployment records and logs
+- `results/mlops/ab_tests/`: A/B test results and analysis
+- `results/mlops/audit_trail.json`: Complete audit trail for compliance
+
+### Example MLOps Workflow
+
+```bash
+# 1. Train and register initial model
+clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model --version-number 1.0.0
+
+# 2. Deploy to staging for validation
+clinical-ml deploy-model --version-id abc123 --environment staging --approved-by clinical_lead
+
+# 3. Monitor performance and check for drift
+clinical-ml monitor --config configs/params.yaml --data data/new_patients.csv
+clinical-ml drift --config configs/params.yaml --model survival_model --days 7
+
+# 4. Create A/B test for model improvement
+clinical-ml create-ab-test --test-name "Hyperparameter Study" --model-versions abc123 def456 --traffic-split '{"abc123": 0.5, "def456": 0.5}'
+
+# 5. Check triggers and potentially retrain
+clinical-ml check-retraining-triggers --model-name survival_model
+
+# 6. Promote best model to production
+clinical-ml deploy-model --version-id def456 --environment production --traffic-percentage 100 --approved-by clinical_director
+```
+
+This comprehensive MLOps system enables safe, automated, and auditable model lifecycle management for clinical AI applications.
+
+## Comprehensive Data Quality & Validation Framework
+
+The toolkit provides a robust data quality and validation framework specifically designed for clinical datasets, ensuring data reliability and regulatory compliance:
+
+### Data Quality Framework Features
+
+- **Comprehensive Profiling**: Automated analysis of completeness, consistency, accuracy, and clinical validity
+- **Anomaly Detection**: Statistical and ML-based detection of data anomalies and outliers
+- **Clinical Validation**: Domain-specific validation rules for clinical data standards
+- **Quality Monitoring**: Continuous monitoring of data quality with drift detection
+- **Automated Cleansing**: Intelligent data cleaning and imputation strategies
+- **Quality Scoring**: Standardized quality metrics with clinical grading (A-F scale)
+
+### Data Quality Configuration
+
+Configure data quality assessment in your main configuration:
+
+```yaml
+# In configs/params.yaml
+data_quality:
+  profiling:
+    enable_anomaly_detection: true
+    enable_clinical_validation: true
+    quality_thresholds:
+      excellent: 90.0
+      good: 80.0
+      acceptable: 70.0
+      poor: 60.0
+  validation:
+    validation_rules: "default"
+    strict_mode: false
+    fail_on_first_error: false
+  cleansing:
+    remove_duplicates: true
+    missing_values_strategy: "auto"
+    handle_outliers: true
+    outlier_method: "iqr"
+    preserve_original: true
+  monitoring:
+    enable_continuous_monitoring: true
+    monitoring_frequency_hours: 24
+    drift_detection_enabled: true
+    drift_threshold: 0.1
+```
+
+### Data Quality Usage
+
+```bash
+# Generate comprehensive data quality profile
+clinical-ml data-quality-profile \
+  --data data/patient_data.csv \
+  --meta data/metadata.yaml \
+  --output-dir results/data_quality \
+  --output-format html \
+  --include-anomaly-detection
+
+# Validate dataset against clinical data rules
+clinical-ml data-validation \
+  --data data/patient_data.csv \
+  --meta data/metadata.yaml \
+  --validation-rules default \
+  --output-dir results/data_validation \
+  --strict-mode
+
+# Cleanse dataset based on quality assessment
+clinical-ml data-cleansing \
+  --data data/patient_data.csv \
+  --meta data/metadata.yaml \
+  --output-dir results/data_cleansing \
+  --remove-duplicates \
+  --handle-outliers
+```
+
+### Data Quality Profiling
+
+The system provides comprehensive data profiling:
+
+- **Completeness Analysis**: Missing value detection and column completeness scoring
+- **Statistical Profiling**: Distribution analysis, outlier detection, and normality testing
+- **Clinical Validation**: Domain-specific checks for clinical data validity
+- **Anomaly Detection**: ML-based anomaly detection using isolation forests
+- **Drift Detection**: Statistical comparison with baseline data distributions
+
+### Validation Rules Engine
+
+Configurable validation rules for clinical data:
+
+- **Completeness Rules**: Ensure required fields meet minimum completeness thresholds
+- **Range Rules**: Validate that values fall within clinically meaningful ranges
+- **Categorical Rules**: Ensure categorical values are from allowed sets
+- **Clinical Rules**: Domain-specific validation for clinical measurements
+- **Statistical Rules**: Distribution and normality validation
+
+### Automated Data Cleansing
+
+Intelligent data cleaning pipeline:
+
+- **Duplicate Removal**: Automatic detection and removal of duplicate records
+- **Missing Value Imputation**: Context-aware imputation strategies
+- **Outlier Handling**: Statistical outlier detection and treatment
+- **Clinical Value Correction**: Domain-specific value corrections
+- **Data Transformation**: Standardization and normalization
+
+### Quality Monitoring System
+
+Continuous data quality monitoring:
+
+- **Baseline Establishment**: Initial quality assessment as baseline
+- **Trend Analysis**: Tracking quality changes over time
+- **Drift Detection**: Statistical detection of data distribution changes
+- **Alert Generation**: Automated alerts for quality degradation
+- **Remediation Tracking**: Monitoring effectiveness of quality improvements
+
+### Data Quality Outputs
+
+The data quality system generates:
+- `results/data_quality/data_quality_report.html`: Interactive HTML quality dashboard
+- `results/data_quality/data_quality_report.json`: Detailed JSON quality metrics
+- `results/data_validation/validation_results.json`: Validation rule results
+- `results/data_cleansing/cleansing_summary.json`: Cleansing operation summary
+- `results/data_monitoring/`: Continuous monitoring history and trends
+
+### Clinical Data Quality Standards
+
+The framework implements clinical data quality standards:
+
+- **SOFA Score Validation**: Organ dysfunction severity scoring validation
+- **Age Range Validation**: Realistic age value checking
+- **Sex/Gender Consistency**: Cross-field consistency validation
+- **Clinical Value Ranges**: Normal range validation for lab values
+- **Data Type Validation**: Appropriate data types for clinical measurements
+
+### Integration with Other Features
+
+Data quality integrates seamlessly with:
+
+- **Model Training**: Quality-gated model training with validation checks
+- **Incremental Learning**: Quality monitoring for incremental data updates
+- **Model Monitoring**: Data quality drift detection for model performance
+- **Clinical Interpretability**: Quality-aware explanation generation
+- **MLOps Pipeline**: Quality-based model promotion and deployment
+
+### Example Data Quality Workflow
+
+```bash
+# 1. Profile incoming data
+clinical-ml data-quality-profile --data data/new_patients.csv --output-format html
+
+# 2. Validate against clinical standards
+clinical-ml data-validation --data data/new_patients.csv --strict-mode
+
+# 3. Cleanse data based on quality assessment
+clinical-ml data-cleansing --data data/new_patients.csv --remove-duplicates --handle-outliers
+
+# 4. Train model with quality-assured data
+clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+
+# 5. Monitor data quality continuously
+clinical-ml monitor --config configs/params.yaml --data data/production_patients.csv
+```
+
+This comprehensive data quality framework ensures that clinical AI models are built on reliable, validated data, meeting the highest standards for healthcare applications.
+
 ## CLI Commands
 
 ```
@@ -592,6 +1078,16 @@ clinical-ml distributed-benchmark --config configs/params.yaml --cluster-type da
 clinical-ml distributed-train --config configs/params.yaml --data data/large_dataset.csv --cluster-type dask --n-workers 8 --model-type xgb_cox
 clinical-ml distributed-evaluate --config configs/params.yaml --data data/test_data.csv --model results/artifacts/models/xgb_cox.pkl --cluster-type dask --n-workers 4
 clinical-ml configure-distributed --config-path configs/distributed_config.json --cluster-type dask --n-workers 8 --memory-per-worker 4GB
+clinical-ml clinical-interpret --config configs/params.yaml --data data/patients.csv --model results/artifacts/models/coxph.pkl --output-format html
+clinical-ml risk-stratification --config configs/params.yaml --data data/patients.csv --model results/artifacts/models/coxph.pkl
+clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model --version-number 1.0.0 --description "Cox PH survival model"
+clinical-ml mlops-status --registry-path results/mlops --model-name survival_model
+clinical-ml deploy-model --version-id abc123 --environment staging --traffic-percentage 50 --approved-by clinical_lead
+clinical-ml create-ab-test --test-name "Model Comparison" --model-versions abc123 def456 --traffic-split '{"abc123": 0.7, "def456": 0.3}'
+clinical-ml check-retraining-triggers --registry-path results/mlops --model-name survival_model
+clinical-ml data-quality-profile --data data/patient_data.csv --output-format html
+clinical-ml data-validation --data data/patient_data.csv --validation-rules default
+clinical-ml data-cleansing --data data/patient_data.csv --remove-duplicates --handle-outliers
 clinical-ml evaluate --config configs/params.yaml
 clinical-ml monitor --config configs/params.yaml --data data/toy/toy_survival.csv
 clinical-ml drift --config configs/params.yaml --model coxph --days 7
