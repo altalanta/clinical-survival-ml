@@ -22,11 +22,111 @@ try:
 except ImportError:
     XGB_AVAILABLE = False
 
+try:
+    import cuml
+    import cudf
+    from cuml.ensemble import RandomForestClassifier as cuMLRandomForest
+    CUML_AVAILABLE = True
+except ImportError:
+    CUML_AVAILABLE = False
+
+try:
+    import dask
+    import dask_cudf
+    DASK_CUDA_AVAILABLE = True
+except ImportError:
+    DASK_CUDA_AVAILABLE = False
+
+
+class MemoryManager:
+    """Intelligent memory management for large datasets."""
+
+    def __init__(self, max_memory_gb: float | None = None, chunk_size_mb: int = 100):
+        """Initialize memory manager.
+
+        Args:
+            max_memory_gb: Maximum memory to use in GB (None for auto-detection)
+            chunk_size_mb: Size of data chunks in MB for processing
+        """
+        self.max_memory_gb = max_memory_gb
+        self.chunk_size_mb = chunk_size_mb
+
+        if max_memory_gb is None:
+            # Auto-detect available memory
+            if TORCH_AVAILABLE and torch.cuda.is_available():
+                self.max_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1e9 * 0.8  # Use 80% of GPU memory
+            else:
+                import psutil
+                self.max_memory_gb = psutil.virtual_memory().available / 1e9 * 0.8  # Use 80% of system memory
+
+    def estimate_dataset_memory(self, n_samples: int, n_features: int, dtype_size: int = 8) -> float:
+        """Estimate memory usage for a dataset in GB.
+
+        Args:
+            n_samples: Number of samples
+            n_features: Number of features
+            dtype_size: Size of each element in bytes (8 for float64)
+
+        Returns:
+            Estimated memory usage in GB
+        """
+        # Rough estimate: samples * features * dtype_size + overhead
+        estimated_bytes = n_samples * n_features * dtype_size * 1.5  # 1.5x overhead factor
+        return estimated_bytes / 1e9
+
+    def should_partition(self, n_samples: int, n_features: int) -> bool:
+        """Check if dataset should be partitioned for memory efficiency.
+
+        Args:
+            n_samples: Number of samples
+            n_features: Number of features
+
+        Returns:
+            Whether to use partitioning
+        """
+        estimated_memory = self.estimate_dataset_memory(n_samples, n_features)
+        return estimated_memory > self.max_memory_gb
+
+    def get_optimal_chunk_size(self, n_samples: int, n_features: int) -> int:
+        """Get optimal chunk size for processing.
+
+        Args:
+            n_samples: Number of samples
+            n_features: Number of features
+
+        Returns:
+            Optimal number of samples per chunk
+        """
+        estimated_memory = self.estimate_dataset_memory(n_samples, n_features)
+        max_samples_per_chunk = int((self.max_memory_gb * 1e9) / (n_features * 8 * 1.5))
+
+        # Ensure minimum chunk size
+        return max(1000, min(max_samples_per_chunk, n_samples // 4))
+
+    def partition_dataframe(self, df: pd.DataFrame, chunk_size: int | None = None) -> list[pd.DataFrame]:
+        """Partition dataframe into chunks for memory-efficient processing.
+
+        Args:
+            df: DataFrame to partition
+            chunk_size: Number of rows per chunk (None for auto-calculation)
+
+        Returns:
+            List of DataFrame chunks
+        """
+        if chunk_size is None:
+            chunk_size = self.get_optimal_chunk_size(df.shape[0], df.shape[1])
+
+        chunks = []
+        for i in range(0, len(df), chunk_size):
+            chunks.append(df.iloc[i:i + chunk_size].copy())
+
+        return chunks
+
 
 class GPUAccelerator:
     """GPU acceleration utilities for survival models."""
 
-    def __init__(self, use_gpu: bool = True, gpu_id: int = 0, n_jobs: int | None = None):
+    def __init__(self, use_gpu: bool = True, gpu_id: int = 0, n_jobs: int | None = None, max_memory_gb: float | None = None):
         """Initialize GPU accelerator.
 
         Args:
@@ -37,6 +137,10 @@ class GPUAccelerator:
         self.use_gpu = use_gpu
         self.gpu_id = gpu_id
         self.n_jobs = n_jobs if n_jobs is not None else mp.cpu_count()
+        self.max_memory_gb = max_memory_gb
+
+        # Initialize memory manager
+        self.memory_manager = MemoryManager(max_memory_gb=max_memory_gb)
 
         # Detect available hardware
         self._detect_hardware()
@@ -57,6 +161,9 @@ class GPUAccelerator:
 
         # XGBoost GPU support (via CUDA)
         self.xgb_gpu_available = XGB_AVAILABLE and self._check_xgb_gpu()
+
+        # cuML GPU support (for Random Survival Forest and ensembles)
+        self.cuml_available = CUML_AVAILABLE and self.cuda_available
 
     def _check_xgb_gpu(self) -> bool:
         """Check if XGBoost has GPU support compiled in."""
@@ -236,6 +343,73 @@ class GPUAccelerator:
                 results["gpu_error"] = str(e)
 
         return results
+
+    def profile_memory_usage(self, X: pd.DataFrame | np.ndarray, y: np.ndarray | None = None) -> dict[str, Any]:
+        """Profile memory usage for a dataset and model training.
+
+        Args:
+            X: Feature matrix
+            y: Target vector (optional)
+
+        Returns:
+            Dictionary with memory profiling information
+        """
+        if isinstance(X, np.ndarray):
+            n_samples, n_features = X.shape
+        else:
+            n_samples, n_features = X.shape
+
+        profile = {
+            "dataset_samples": n_samples,
+            "dataset_features": n_features,
+            "estimated_memory_gb": self.memory_manager.estimate_dataset_memory(n_samples, n_features),
+            "should_partition": self.memory_manager.should_partition(n_samples, n_features),
+            "optimal_chunk_size": self.memory_manager.get_optimal_chunk_size(n_samples, n_features),
+            "max_memory_gb": self.memory_manager.max_memory_gb,
+        }
+
+        if y is not None:
+            profile["target_memory_mb"] = y.nbytes / 1e6 if hasattr(y, 'nbytes') else "unknown"
+
+        return profile
+
+    def optimize_for_memory(self, X: pd.DataFrame | np.ndarray, model_type: str = "auto") -> dict[str, Any]:
+        """Get memory optimization recommendations for a dataset.
+
+        Args:
+            X: Feature matrix
+            model_type: Type of model ('auto', 'xgb', 'rsf', 'ensemble')
+
+        Returns:
+            Dictionary with optimization recommendations
+        """
+        profile = self.profile_memory_usage(X)
+
+        recommendations = {
+            "use_partitioning": profile["should_partition"],
+            "chunk_size": profile["optimal_chunk_size"],
+            "batch_size": min(profile["optimal_chunk_size"], 10000),
+            "memory_warnings": [],
+        }
+
+        if profile["estimated_memory_gb"] > self.memory_manager.max_memory_gb * 0.9:
+            recommendations["memory_warnings"].append(
+                f"Dataset may exceed available memory ({profile['estimated_memory_gb']".2f"}GB vs {self.memory_manager.max_memory_gb".2f"}GB)"
+            )
+
+        # Model-specific recommendations
+        if model_type == "xgb":
+            recommendations.update({
+                "xgb_tree_method": "gpu_hist" if self.xgb_gpu_available else "hist",
+                "xgb_max_bin": 64 if profile["estimated_memory_gb"] > 10 else 256,
+            })
+        elif model_type == "rsf":
+            recommendations.update({
+                "rsf_use_cuml": self.cuml_available,
+                "rsf_max_samples": min(profile["optimal_chunk_size"], 100000),
+            })
+
+        return recommendations
 
 
 def create_gpu_accelerator(

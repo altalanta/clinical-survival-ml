@@ -2704,3 +2704,326 @@ def run_check_retraining_triggers_command(
     typer.echo("
 💡 Recommendation: Run model retraining for the triggered models"
     typer.echo("\n🎉 Trigger check completed!"
+
+
+@log_function_call
+def run_synthetic_data_command(
+    scenario: str = typer.Option("icu", help="Type of synthetic data to generate"),
+    n_samples: int = typer.Option(1000, help="Number of samples to generate"),
+    output_dir: Path = typer.Option("data/synthetic", help="Output directory for generated data"),
+    random_state: int = typer.Option(42, help="Random seed for reproducibility")
+) -> None:
+    """Generate synthetic clinical datasets for testing."""
+    from clinical_survival.testing import SyntheticDatasetGenerator
+
+    typer.echo("🔬 Generating synthetic clinical dataset...")
+
+    generator = SyntheticDatasetGenerator(random_state=random_state)
+
+    if scenario == "icu":
+        features, outcomes = generator.generate_icu_dataset(n_samples=n_samples)
+    elif scenario == "cancer":
+        features, outcomes = generator.generate_cancer_dataset(n_samples=n_samples)
+    elif scenario == "cardiovascular":
+        features, outcomes = generator.generate_cardiovascular_dataset(n_samples=n_samples)
+    else:
+        typer.echo(f"❌ Unknown scenario: {scenario}")
+        return
+
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save data
+    features_file = output_dir / f"{scenario}_features.csv"
+    outcomes_file = output_dir / f"{scenario}_outcomes.csv"
+
+    features.to_csv(features_file, index=False)
+    outcomes.to_csv(outcomes_file, index=False)
+
+    typer.echo(f"✅ Generated {n_samples} samples for {scenario} scenario")
+    typer.echo(f"📁 Features saved to: {features_file}")
+    typer.echo(f"📁 Outcomes saved to: {outcomes_file}")
+
+    # Show summary statistics
+    typer.echo("
+📊 Dataset Summary:"    typer.echo(f"   • Features: {features.shape[1]}")
+    typer.echo(f"   • Samples: {features.shape[0]}")
+    typer.echo(f"   • Event rate: {outcomes['event'].mean()".2%"}")
+    typer.echo(f"   • Median survival time: {outcomes['time'].median()".1f"} days")
+
+    typer.echo("\n🎉 Synthetic data generation completed!"
+
+
+@log_function_call
+def run_performance_regression_command(
+    config: Path = typer.Option(..., help="Configuration file"),
+    baseline_file: Path = typer.Option("tests/baseline_performance.json", help="Baseline performance file"),
+    tolerance: float = typer.Option(0.05, help="Performance tolerance for regression detection"),
+    output_dir: Path = typer.Option("tests/performance_regression", help="Output directory for results")
+) -> None:
+    """Run automated performance regression testing."""
+    from clinical_survival.testing import PerformanceRegressionTester
+    from clinical_survival.config_validation import load_config
+    from clinical_survival.models import make_model
+
+    typer.echo("🧪 Running performance regression tests...")
+
+    # Load configuration
+    config_dict = load_config(config)
+
+    # Load data
+    data_csv = config_dict["paths"]["data_csv"]
+    metadata = config_dict["paths"]["metadata"]
+
+    X, y, metadata_dict = load_dataset(data_csv, metadata)
+    typer.echo(f"📊 Loaded dataset: {X.shape[0]} samples, {X.shape[1]} features")
+
+    # Initialize tester
+    tester = PerformanceRegressionTester(baseline_file=str(baseline_file))
+
+    # Test different models
+    models_to_test = config_dict.get("models", ["coxph", "rsf", "xgb_cox"])
+
+    results = {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for model_name in models_to_test:
+        typer.echo(f"\n🔬 Testing {model_name}...")
+
+        try:
+            # Create model constructor
+            def model_constructor():
+                return make_model(model_name, **config_dict.get("model_params", {}).get(model_name, {}))
+
+            # Run regression test
+            result = tester.run_regression_test(
+                model_constructor=model_constructor,
+                X=X,
+                y=y,
+                test_name=f"{model_name}_regression",
+                tolerance=tolerance
+            )
+
+            results[model_name] = result
+
+            if result.passed:
+                typer.echo(f"✅ {model_name}: PASSED (concordance: {result.value".3f"})")
+            else:
+                typer.echo(f"❌ {model_name}: FAILED (concordance: {result.value".3f"}, threshold: {result.threshold".3f"})")
+                if result.error_message:
+                    typer.echo(f"   Error: {result.error_message}")
+
+        except Exception as e:
+            typer.echo(f"❌ {model_name}: ERROR - {str(e)}")
+            results[model_name] = TestResult(
+                test_name=f"{model_name}_error",
+                passed=False,
+                value=0.0,
+                threshold=0.0,
+                execution_time=0.0,
+                error_message=str(e)
+            )
+
+    # Save results
+    results_file = output_dir / "regression_results.json"
+    results_dict = {
+        model_name: {
+            "passed": result.passed,
+            "value": result.value,
+            "threshold": result.threshold,
+            "execution_time": result.execution_time,
+            "error_message": result.error_message
+        }
+        for model_name, result in results.items()
+    }
+
+    with open(results_file, 'w') as f:
+        json.dump(results_dict, f, indent=2)
+
+    # Summary
+    passed_tests = sum(1 for r in results.values() if r.passed)
+    total_tests = len(results)
+
+    typer.echo("
+📋 Regression Test Summary:"    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
+    typer.echo(f"   • Results saved to: {results_file}")
+
+    if passed_tests == total_tests:
+        typer.echo("✅ All regression tests PASSED!")
+    else:
+        typer.echo("❌ Some regression tests FAILED!")
+        typer.echo("💡 Recommendation: Investigate performance changes and update baselines if necessary")
+
+    typer.echo("\n🎉 Performance regression testing completed!"
+
+
+@log_function_call
+def run_cv_integrity_command(
+    config: Path = typer.Option(..., help="Configuration file"),
+    cv_folds: int = typer.Option(5, help="Number of CV folds to test"),
+    output_dir: Path = typer.Option("tests/cv_integrity", help="Output directory for results")
+) -> None:
+    """Check cross-validation integrity and detect data leakage."""
+    from clinical_survival.testing import CrossValidationIntegrityChecker
+    from clinical_survival.config_validation import load_config
+    from clinical_survival.models import make_model
+
+    typer.echo("🔍 Checking cross-validation integrity...")
+
+    # Load configuration
+    config_dict = load_config(config)
+
+    # Load data
+    data_csv = config_dict["paths"]["data_csv"]
+    metadata = config_dict["paths"]["metadata"]
+
+    X, y, metadata_dict = load_dataset(data_csv, metadata)
+    typer.echo(f"📊 Loaded dataset: {X.shape[0]} samples, {X.shape[1]} features")
+
+    # Initialize checker
+    checker = CrossValidationIntegrityChecker()
+
+    # Test different models
+    models_to_test = config_dict.get("models", ["coxph", "rsf", "xgb_cox"])
+
+    results = {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for model_name in models_to_test:
+        typer.echo(f"\n🔬 Checking {model_name}...")
+
+        try:
+            # Create model constructor
+            def model_constructor():
+                return make_model(model_name, **config_dict.get("model_params", {}).get(model_name, {}))
+
+            # Run integrity check
+            result = checker.check_cv_integrity(
+                model_constructor=model_constructor,
+                X=X,
+                y=y,
+                cv_folds=cv_folds,
+                test_name=f"{model_name}_integrity"
+            )
+
+            results[model_name] = result
+
+            if result.passed:
+                typer.echo(f"✅ {model_name}: PASSED (concordance: {result.value".3f"})")
+            else:
+                typer.echo(f"❌ {model_name}: FAILED (concordance: {result.value".3f"})")
+                if result.error_message:
+                    typer.echo(f"   Issue: {result.error_message}")
+
+        except Exception as e:
+            typer.echo(f"❌ {model_name}: ERROR - {str(e)}")
+            results[model_name] = TestResult(
+                test_name=f"{model_name}_error",
+                passed=False,
+                value=0.0,
+                threshold=0.0,
+                execution_time=0.0,
+                error_message=str(e)
+            )
+
+    # Save results
+    results_file = output_dir / "integrity_results.json"
+    results_dict = {
+        model_name: {
+            "passed": result.passed,
+            "value": result.value,
+            "threshold": result.threshold,
+            "execution_time": result.execution_time,
+            "error_message": result.error_message
+        }
+        for model_name, result in results.items()
+    }
+
+    with open(results_file, 'w') as f:
+        json.dump(results_dict, f, indent=2)
+
+    # Summary
+    passed_tests = sum(1 for r in results.values() if r.passed)
+    total_tests = len(results)
+
+    typer.echo("
+📋 CV Integrity Check Summary:"    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
+    typer.echo(f"   • Results saved to: {results_file}")
+
+    if passed_tests == total_tests:
+        typer.echo("✅ All CV integrity checks PASSED!")
+    else:
+        typer.echo("❌ Some CV integrity checks FAILED!")
+        typer.echo("💡 Recommendation: Review cross-validation setup for potential data leakage")
+
+    typer.echo("\n🎉 CV integrity check completed!"
+
+
+@log_function_call
+def run_benchmark_suite_command(
+    config: Path = typer.Option(..., help="Configuration file"),
+    output_dir: Path = typer.Option("tests/benchmark_results", help="Output directory for results"),
+    include_sksurv: bool = typer.Option(True, help="Include scikit-survival benchmarks"),
+    include_lifelines: bool = typer.Option(True, help="Include lifelines benchmarks")
+) -> None:
+    """Run comprehensive benchmark against other survival libraries."""
+    from clinical_survival.testing import SurvivalBenchmarkSuite
+    from clinical_survival.config_validation import load_config
+    from clinical_survival.models import make_model
+
+    typer.echo("🏆 Running survival analysis benchmark suite...")
+
+    # Load configuration
+    config_dict = load_config(config)
+
+    # Load data
+    data_csv = config_dict["paths"]["data_csv"]
+    metadata = config_dict["paths"]["metadata"]
+
+    X, y, metadata_dict = load_dataset(data_csv, metadata)
+    typer.echo(f"📊 Loaded dataset: {X.shape[0]} samples, {X.shape[1]} features")
+
+    # Initialize benchmark suite
+    benchmarker = SurvivalBenchmarkSuite()
+
+    # Prepare our models
+    our_models = {}
+    models_to_test = config_dict.get("models", ["coxph", "rsf", "xgb_cox"])
+
+    for model_name in models_to_test:
+        try:
+            def model_constructor():
+                return make_model(model_name, **config_dict.get("model_params", {}).get(model_name, {}))
+            our_models[model_name] = model_constructor
+        except Exception as e:
+            typer.echo(f"⚠️  Could not create {model_name}: {e}")
+
+    # Run benchmarks
+    results = benchmarker.run_full_benchmark(X, y, our_models)
+
+    # Save results
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results_file = output_dir / "benchmark_results.json"
+
+    results_dict = {
+        test_name: {
+            "passed": result.passed,
+            "value": result.value,
+            "threshold": result.threshold,
+            "execution_time": result.execution_time,
+            "error_message": result.error_message
+        }
+        for test_name, result in results.items()
+    }
+
+    with open(results_file, 'w') as f:
+        json.dump(results_dict, f, indent=2)
+
+    # Display results
+    typer.echo("
+📊 Benchmark Results:"    for test_name, result in results.items():
+        status = "✅" if result.passed else "❌"
+        typer.echo(f"   {status} {test_name}: {result.value".3f"}")
+
+    typer.echo(f"\n📁 Results saved to: {results_file}")
+    typer.echo("\n🎉 Benchmark suite completed!"

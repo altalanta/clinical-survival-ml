@@ -44,3 +44,33 @@ smoke: ## end-to-end toy run
 .PHONY: report
 report: ## regenerate HTML report
 	clinical-ml report --config configs/params.yaml --out results/report.html
+
+.PHONY: test-quality
+test-quality: ## run comprehensive quality assurance tests
+	@echo "🔬 Generating synthetic test data..."
+	clinical-ml synthetic-data --scenario icu --n-samples 1000 --random-state 42 --output-dir tests/data
+	@echo "🧪 Running performance regression tests..."
+	clinical-ml performance-regression --config configs/params.yaml --tolerance 0.02 --output-dir tests/performance_regression
+	@echo "🔍 Checking CV integrity..."
+	clinical-ml cv-integrity --config configs/params.yaml --cv-folds 3 --output-dir tests/cv_integrity
+	@echo "🏆 Running benchmark suite..."
+	clinical-ml benchmark-suite --config configs/params.yaml --output-dir tests/benchmark_results
+	@echo "✅ Quality assurance tests completed!"
+
+.PHONY: test-synthetic
+test-synthetic: ## generate synthetic datasets for testing
+	clinical-ml synthetic-data --scenario icu --n-samples 500 --random-state 42
+	clinical-ml synthetic-data --scenario cancer --n-samples 500 --random-state 42
+	clinical-ml synthetic-data --scenario cardiovascular --n-samples 500 --random-state 42
+
+.PHONY: test-regression
+test-regression: ## run performance regression tests
+	clinical-ml performance-regression --config configs/params.yaml --tolerance 0.05
+
+.PHONY: test-cv-integrity
+test-cv-integrity: ## check cross-validation integrity
+	clinical-ml cv-integrity --config configs/params.yaml --cv-folds 5
+
+.PHONY: test-benchmark
+test-benchmark: ## run benchmark suite
+	clinical-ml benchmark-suite --config configs/params.yaml

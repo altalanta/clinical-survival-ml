@@ -1,0 +1,19 @@
+{
+  "cluster_type": "local",
+  "n_workers": 4,
+  "threads_per_worker": 2,
+  "memory_per_worker": "2GB",
+  "partition_strategy": "balanced",
+  "n_partitions": 10,
+  "scheduler_address": "127.0.0.1:8786",
+  "dashboard_address": "127.0.0.1:8787",
+  "chunk_size": 1000,
+  "optimize_memory": true,
+  "use_gpu_if_available": true,
+  "retry_failed_tasks": true,
+  "max_retries": 3,
+  "timeout_minutes": 60,
+  "resource_allocation_strategy": "balanced"
+}
+
+

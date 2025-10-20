@@ -846,3 +846,4 @@ def initialize_mlops_system(config: Dict[str, Any]) -> Tuple[ModelRegistry, Auto
 
     logger.info("MLOps system initialized successfully")
     return registry, auto_retrainer, deployment_manager, ab_test_manager
+

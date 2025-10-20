@@ -1,5 +1,12 @@
 """Clinical Survival ML package."""
 
+from clinical_survival.testing import (
+    SyntheticDatasetGenerator,
+    PerformanceRegressionTester,
+    CrossValidationIntegrityChecker,
+    SurvivalBenchmarkSuite
+)
+
 from __future__ import annotations
 
 try:
