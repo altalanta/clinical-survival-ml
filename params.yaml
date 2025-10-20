@@ -1,0 +1,134 @@
+seed: 42
+n_splits: 3
+inner_splits: 2
+test_split: 0.2
+time_col: "time"
+event_col: "event"
+id_col: "id"
+scoring:
+  primary: "concordance"
+  secondary: ["ibs", "brier@365"]
+calibration:
+  times_days: [90, 180, 365]
+  bins: 10
+decision_curve:
+  times_days: [365]
+  thresholds: [0.05, 0.1, 0.2, 0.3]
+missing:
+  strategy: "iterative"
+  max_iter: 10
+  initial_strategy: "median"
+models:
+  - coxph
+  - rsf
+  - xgb_cox
+  - xgb_aft
+  - stacking
+  - bagging
+explain:
+  shap_samples: 200
+  pdp_features: ["age", "sofa", "stage"]
+monitoring:
+  alert_thresholds:
+    concordance_drop: 0.05
+    brier_increase: 0.02
+    feature_drift: 0.1
+    concept_drift: 0.15
+  baseline_window_days: 7
+  max_history_records: 1000
+paths:
+  data_csv: "examples/toy/data.csv"
+  metadata: "examples/toy/metadata.yaml"
+  external_csv: null
+  outdir: "results"
+  features: "configs/features.yaml"
+evaluation:
+  bootstrap: 200
+external:
+  label: "holdout"
+  group_column: "group"
+  train_value: "train"
+  external_value: "external"
+incremental_learning:
+  enabled: false
+  update_frequency_days: 7
+  min_samples_for_update: 50
+  max_samples_in_memory: 1000
+  update_strategy: "online"
+  drift_detection_enabled: true
+  create_backup_before_update: true
+  backup_retention_days: 30
+distributed_computing:
+  enabled: false
+  cluster_type: "local"
+  n_workers: 4
+  threads_per_worker: 2
+  memory_per_worker: "2GB"
+  partition_strategy: "balanced"
+  n_partitions: 10
+  scheduler_address: "127.0.0.1:8786"
+  dashboard_address: "127.0.0.1:8787"
+clinical_interpretability:
+  enabled: true
+  risk_thresholds:
+    low: 0.2
+    moderate: 0.4
+    high: 0.7
+    very_high: 1.0
+  clinical_context:
+    feature_domains:
+      age: "demographics"
+      sex: "demographics"
+      sofa: "vitals"
+      stage: "comorbidities"
+      creatinine: "labs"
+      bilirubin: "labs"
+    risk_categories:
+      protective: ["age", "sex"]
+      risk_factor: ["sofa", "stage", "creatinine", "bilirubin"]
+      neutral: []
+  explanation_features:
+    include_shap_values: true
+    include_clinical_interpretation: true
+    include_risk_stratification: true
+    include_recommendations: true
+    include_confidence_scores: true
+mlops:
+  enabled: true
+  registry_path: "results/mlops"
+  environments:
+    development:
+      type: "development"
+      auto_rollback: false
+      rollback_threshold: 0.1
+    staging:
+      type: "staging"
+      auto_rollback: true
+      rollback_threshold: 0.05
+    production:
+      type: "production"
+      auto_rollback: true
+      rollback_threshold: 0.02
+  triggers:
+    daily_retrain:
+      enabled: true
+      trigger_type: "scheduled"
+      schedule_cron: "0 2 * * *"
+      require_approval: true
+    performance_monitor:
+      enabled: true
+      trigger_type: "performance"
+      performance_threshold: 0.05
+      auto_retrain: false
+      require_approval: true
+    drift_detection:
+      enabled: true
+      trigger_type: "drift"
+      drift_threshold: 0.1
+      auto_retrain: false
+      require_approval: true
+  deployment_settings:
+    require_approval_for_production: true
+    auto_rollback_on_failure: true
+    max_concurrent_deployments: 3
+    deployment_timeout_minutes: 30

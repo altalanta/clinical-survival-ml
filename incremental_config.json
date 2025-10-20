@@ -1,0 +1,15 @@
+{
+  "update_frequency_days": 7,
+  "min_samples_for_update": 50,
+  "max_samples_in_memory": 1000,
+  "update_strategy": "online",
+  "window_size_days": 365,
+  "performance_threshold": 0.02,
+  "max_updates_per_model": 10,
+  "drift_detection_enabled": true,
+  "drift_threshold": 0.1,
+  "create_backup_before_update": true,
+  "backup_retention_days": 30
+}
+
+

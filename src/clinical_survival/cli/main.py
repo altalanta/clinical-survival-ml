@@ -10,12 +10,14 @@ from clinical_survival.cli.commands import (
     run_ab_test_results_command,
     run_automl_command,
     run_benchmark_hardware_command,
+    run_benchmark_suite_command,
     run_check_retraining_triggers_command,
     run_clinical_interpret_command,
     run_configure_distributed_command,
     run_configure_incremental_command,
     run_counterfactual_command,
     run_create_ab_test_command,
+    run_cv_integrity_command,
     run_data_cleansing_command,
     run_data_quality_profile_command,
     run_data_validation_command,
@@ -31,12 +33,14 @@ from clinical_survival.cli.commands import (
     run_mlops_status_command,
     run_monitor_command,
     run_monitoring_status_command,
+    run_performance_regression_command,
     run_register_model_command,
     run_report_command,
     run_reset_monitoring_command,
     run_risk_stratification_command,
     run_rollback_deployment_command,
     run_run_command,
+    run_synthetic_data_command,
     run_train_command,
     run_update_models_command,
     run_validate_config_command,
@@ -522,6 +526,49 @@ def data_cleansing(
     run_data_cleansing_command(
         data, meta, output_dir, remove_duplicates, handle_outliers, preserve_original
     )
+
+
+@app.command()
+def synthetic_data(
+    scenario: str = typer.Option("icu", help="Type of synthetic data to generate (icu, cancer, cardiovascular)"),
+    n_samples: int = typer.Option(1000, help="Number of samples to generate"),
+    output_dir: Path = typer.Option(Path("data/synthetic"), help="Output directory for generated data"),
+    random_state: int = typer.Option(42, help="Random seed for reproducibility")
+) -> None:
+    """Generate synthetic clinical datasets for testing."""
+    run_synthetic_data_command(scenario, n_samples, output_dir, random_state)
+
+
+@app.command()
+def performance_regression(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True, help="Configuration file"),
+    baseline_file: Path = typer.Option(Path("tests/baseline_performance.json"), help="Baseline performance file"),
+    tolerance: float = typer.Option(0.05, help="Performance tolerance for regression detection"),
+    output_dir: Path = typer.Option(Path("tests/performance_regression"), help="Output directory for results")
+) -> None:
+    """Run automated performance regression testing."""
+    run_performance_regression_command(config, baseline_file, tolerance, output_dir)
+
+
+@app.command()
+def cv_integrity(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True, help="Configuration file"),
+    cv_folds: int = typer.Option(5, help="Number of CV folds to test"),
+    output_dir: Path = typer.Option(Path("tests/cv_integrity"), help="Output directory for results")
+) -> None:
+    """Check cross-validation integrity and detect data leakage."""
+    run_cv_integrity_command(config, cv_folds, output_dir)
+
+
+@app.command()
+def benchmark_suite(
+    config: Path = typer.Option(Path("configs/params.yaml"), exists=True, help="Configuration file"),
+    output_dir: Path = typer.Option(Path("tests/benchmark_results"), help="Output directory for results"),
+    include_sksurv: bool = typer.Option(True, help="Include scikit-survival benchmarks"),
+    include_lifelines: bool = typer.Option(True, help="Include lifelines benchmarks")
+) -> None:
+    """Run comprehensive benchmark against other survival libraries."""
+    run_benchmark_suite_command(config, output_dir, include_sksurv, include_lifelines)
 
 
 if __name__ == "__main__":  # pragma: no cover

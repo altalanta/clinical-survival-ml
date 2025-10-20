@@ -29,6 +29,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gpu = [
+  "cuml>=23.08,<24.12",
+  "cudf>=23.08,<24.12",
+  "dask-cuda>=23.08,<24.12",
+  "dask[complete]>=2023.8,<2024.12"
+]
 dev = [
   "pytest==8.3.3",
   "pytest-cov==5.0.0",
