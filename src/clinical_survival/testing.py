@@ -749,3 +749,4 @@ class SurvivalBenchmarkSuite:
                             n_correct += 1
 
         return n_correct / max(n_pairs, 1)
+
