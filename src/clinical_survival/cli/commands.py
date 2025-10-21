@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Annotated, Dict, List, Optional
 
 import joblib
 import numpy as np
@@ -12,6 +12,9 @@ import pandas as pd
 import typer
 from sklearn.pipeline import Pipeline
 from sksurv.util import Surv
+from rich import print as rprint
+from rich.progress import Progress, SpinnerColumn, TextColumn, track
+from typing_extensions import Literal
 
 from clinical_survival import __version__
 from clinical_survival.config_validation import (
@@ -94,6 +97,11 @@ from clinical_survival.utils import (
     set_global_seed,
     stratified_event_split,
 )
+from clinical_survival.config_models import ParamsConfig, ModelGridConfig, FeaturesConfig
+from clinical_survival.constants import (
+    DEFAULT_MODEL_GRID_PATH,
+)
+from pydantic import ValidationError
 
 
 def _load_feature_spec(path: Path) -> dict[str, list[str]]:
@@ -672,10 +680,35 @@ def run_validate_config_command(config: Path, grid: Path, features: Path) -> Non
     """Run the validate-config command."""
     typer.echo("🔍 Validating configuration files...")
 
-    errors = validate_all_configs(config, grid, features)
+    all_errors: dict[str, list[str]] = {"params.yaml": [], "model_grid.yaml": [], "features.yaml": []}
 
-    if any(file_errors for file_errors in errors.values()):
-        print_validation_errors(errors)
+    # Validate params.yaml
+    try:
+        ParamsConfig.model_validate_file(config)
+    except ValidationError as e:
+        all_errors["params.yaml"].extend([f"Validation error in params.yaml: {err['loc'][0]} - {err['msg']}" for err in e.errors()])
+    except FileNotFoundError:
+        all_errors["params.yaml"].append(f"Configuration file not found: {config}")
+
+    # Validate model_grid.yaml
+    try:
+        ModelGridConfig.model_validate_file(grid)
+    except ValidationError as e:
+        all_errors["model_grid.yaml"].extend([f"Validation error in model_grid.yaml: {err['loc'][0]} - {err['msg']}" for err in e.errors()])
+    except FileNotFoundError:
+        all_errors["model_grid.yaml"].append(f"Configuration file not found: {grid}")
+
+    # Validate features.yaml
+    try:
+        FeaturesConfig.model_validate_file(features)
+    except ValidationError as e:
+        all_errors["features.yaml"].extend([f"Validation error in features.yaml: {err['loc'][0]} - {err['msg']}" for err in e.errors()])
+    except FileNotFoundError:
+        all_errors["features.yaml"].append(f"Configuration file not found: {features}")
+
+
+    if any(file_errors for file_errors in all_errors.values()):
+        print_validation_errors(all_errors)
         typer.echo("\n💡 Tip: Check the configuration documentation for correct parameter values")
         raise typer.Exit(1)
     else:
@@ -1137,8 +1170,8 @@ def run_benchmark_hardware_command(
     typer.echo(f"   • XGBoost GPU support: {optimal_config['xgb_gpu_available']}")
 
     # Benchmark model training
-    typer.echo("
-🏃 Running performance benchmarks..."    typer.echo(f"   Model: {model_type}")
+    typer.echo("🏃 Running performance benchmarks...")
+    typer.echo(f"   Model: {model_type}")
 
     def create_benchmark_model():
         return make_model(
@@ -1154,8 +1187,8 @@ def run_benchmark_hardware_command(
             create_benchmark_model, X_df, y
         )
 
-        typer.echo("
-⏱️  Benchmark Results:"        typer.echo(f"   • CPU training time: {benchmark_results['cpu_time']:.".3f" seconds")
+        typer.echo("⏱️  Benchmark Results:")
+        typer.echo(f"   • CPU training time: {benchmark_results['cpu_time']:.".3f" seconds")
 
         if "gpu_time" in benchmark_results:
             typer.echo(f"   • GPU training time: {benchmark_results['gpu_time']:.".3f" seconds")
@@ -1167,8 +1200,8 @@ def run_benchmark_hardware_command(
         typer.echo(f"   • Benchmark failed: {e}")
 
     # Recommendations
-    typer.echo("
-💡 Recommendations:"    if optimal_config['xgb_gpu_available'] and use_gpu:
+    typer.echo("💡 Recommendations:")
+    if optimal_config['xgb_gpu_available'] and use_gpu:
         typer.echo("   • ✅ GPU acceleration is recommended for XGBoost models")
     elif optimal_config['cuda_available']:
         typer.echo("   • ⚠️  GPU available but XGBoost may not have GPU support")
@@ -1178,8 +1211,7 @@ def run_benchmark_hardware_command(
 
     typer.echo(f"   • 💡 Use --gpu-id {optimal_config.get('recommended_gpu_id', 0)} for best performance")
 
-    typer.echo("
-🎯 Hardware detection completed!"
+    typer.echo("🎯 Hardware detection completed!")
 
 
 @log_function_call
@@ -1322,8 +1354,8 @@ def run_counterfactual_command(
         # Summary statistics
         if "summary" in explanation:
             summary = explanation["summary"]
-            typer.echo("
-📊 Summary:"            typer.echo(f"   Total counterfactuals: {summary['total_counterfactuals']}")
+            typer.echo("📊 Summary:")
+            typer.echo(f"   Total counterfactuals: {summary['total_counterfactuals']}")
             typer.echo(f"   Average distance: {summary['avg_distance']".3f"}")
             typer.echo(f"   Min/Max distance: {summary['min_distance']".3f"} / {summary['max_distance']".3f"}")
     else:
@@ -1542,7 +1574,8 @@ def run_configure_incremental_command(
         json.dump(config, f, indent=2)
 
     typer.echo(f"✅ Incremental learning configuration saved to {config_path}")
-    typer.echo("\n📋 Configuration summary:"    typer.echo(f"   Update frequency: {update_frequency_days} days")
+    typer.echo("\n📋 Configuration summary:")
+    typer.echo(f"   Update frequency: {update_frequency_days} days")
     typer.echo(f"   Min samples for update: {min_samples_for_update}")
     typer.echo(f"   Max samples in memory: {max_samples_in_memory}")
     typer.echo(f"   Update strategy: {update_strategy}")
@@ -1642,14 +1675,14 @@ def run_distributed_benchmark_command(
 
         for size in sorted(results.keys()):
             metrics = results[size]
-            typer.echo(f"   Dataset size {size","}:")
+            typer.echo(f"   Dataset size {size}:")
             typer.echo(f"     Total time: {metrics.total_time".2f"}s")
             typer.echo(f"     Speedup: {metrics.speedup_factor".2f"}x")
             typer.echo(f"     Tasks: {metrics.n_tasks_completed} completed, {metrics.n_tasks_failed} failed")
 
         # Display scaling analysis
-        typer.echo("
-📊 Scaling Analysis:"        if "r_squared" in analysis:
+        typer.echo("📊 Scaling Analysis:")
+        if "r_squared" in analysis:
             typer.echo(f"   R²: {analysis['r_squared']".3f"}")
             typer.echo(f"   Scaling coefficient: {analysis['scaling_coefficient']".3f"}")
             typer.echo(f"   Trend: {analysis.get('ideal_scaling', 'unknown')}")
@@ -1725,7 +1758,8 @@ def run_distributed_train_command(
             model_params={"random_state": params["seed"]}
         )
 
-        typer.echo("✅ Training completed!"        typer.echo(f"   Total time: {metrics.total_time".2f"}s")
+        typer.echo("✅ Training completed!")
+        typer.echo(f"   Total time: {metrics.total_time".2f"}s")
         typer.echo(f"   Computation time: {metrics.computation_time".2f"}s")
         typer.echo(f"   Communication time: {metrics.communication_time".2f"}s")
         typer.echo(f"   Tasks completed: {metrics.n_tasks_completed}")
@@ -1830,7 +1864,8 @@ def run_distributed_evaluate_command(
         results = evaluator.evaluate_distributed(dataset, model, metrics)
 
         # Display results
-        typer.echo("\n📈 Evaluation Results:"        for metric, value in results.items():
+        typer.echo("\n📈 Evaluation Results:")
+        for metric, value in results.items():
             typer.echo(f"   {metric}: {value".4f"}")
 
         typer.echo("\n🎉 Distributed evaluation completed!")
@@ -1885,7 +1920,8 @@ def run_configure_distributed_command(
         json.dump(config, f, indent=2)
 
     typer.echo(f"✅ Distributed computing configuration saved to {config_path}")
-    typer.echo("\n📋 Configuration summary:"    typer.echo(f"   Cluster type: {cluster_type}")
+    typer.echo("\n📋 Configuration summary:")
+    typer.echo(f"   Cluster type: {cluster_type}")
     typer.echo(f"   Workers: {n_workers}")
     typer.echo(f"   Threads per worker: {threads_per_worker}")
     typer.echo(f"   Memory per worker: {memory_per_worker}")
@@ -1997,8 +2033,8 @@ def run_clinical_interpret_command(
 
     # Display summary
     summary = report["summary"]
-    typer.echo("
-📊 Report Summary:"    typer.echo(f"   Total patients analyzed: {summary['total_patients']}")
+    typer.echo("📊 Report Summary:")
+    typer.echo(f"   Total patients analyzed: {summary['total_patients']}")
     typer.echo(f"   Average risk score: {summary['average_risk_score']".3f"}")
     typer.echo(f"   Risk distribution: Low={summary['risk_distribution']['low']}, "
                f"Moderate={summary['risk_distribution']['moderate']}, "
@@ -2009,15 +2045,16 @@ def run_clinical_interpret_command(
     # Display population insights
     if report["population_insights"]:
         insights = report["population_insights"]
-        typer.echo("
-🔍 Population Insights:"        typer.echo(f"   Top risk features: {', '.join(insights.get('top_risk_features', [])[:3])}")
+        typer.echo("🔍 Population Insights:")
+        typer.echo(f"   Top risk features: {', '.join(insights.get('top_risk_features', [])[:3])}")
 
         if "risk_factor_prevalence" in insights:
             for feature, prevalence in list(insights["risk_factor_prevalence"].items())[:3]:
                 typer.echo(f"   {feature}: {prevalence".1%"} of patients")
 
-    typer.echo("
-🎉 Clinical interpretability analysis completed!"
+    typer.echo("🎉 Clinical interpretability analysis completed!")
+
+
 def run_risk_stratification_command(
     config_path: Path,
     data_path: Path,
@@ -2093,8 +2130,8 @@ def run_risk_stratification_command(
     risk_categories = [s.risk_category for s in stratifications]
     urgency_levels = [s.urgency_level for s in stratifications]
 
-    typer.echo("
-📊 Risk Stratification Summary:"    typer.echo(f"   Total patients: {len(stratifications)}")
+    typer.echo("📊 Risk Stratification Summary:")
+    typer.echo(f"   Total patients: {len(stratifications)}")
     typer.echo(f"   Risk categories: Low={risk_categories.count('low')}, "
                f"Moderate={risk_categories.count('moderate')}, "
                f"High={risk_categories.count('high')}, "
@@ -2111,12 +2148,12 @@ def run_risk_stratification_command(
     if all_recommendations:
         from collections import Counter
         common_recommendations = Counter(all_recommendations).most_common(3)
-        typer.echo("
-💡 Top Clinical Recommendations:"        for rec, count in common_recommendations:
+        typer.echo("💡 Top Clinical Recommendations:")
+        for rec, count in common_recommendations:
             typer.echo(f"   • {rec} ({count} patients)")
 
     typer.echo(f"\n💾 Results saved to {results_file}")
-    typer.echo("🎉 Risk stratification analysis completed!"
+    typer.echo("🎉 Risk stratification analysis completed!")
 
 
 def run_data_quality_profile_command(
@@ -2181,19 +2218,20 @@ def run_data_quality_profile_command(
 
     # Display summary
     metrics = report.quality_metrics
-    typer.echo("
-📊 Quality Summary:"    typer.echo(f"   Overall Score: {metrics.overall_quality_score".1f"} ({metrics.quality_grade})")
+    typer.echo("📊 Quality Summary:")
+    typer.echo(f"   Overall Score: {metrics.overall_quality_score".1f"} ({metrics.quality_grade})")
     typer.echo(f"   Missing Values: {metrics.missing_values_percentage".1f"}%")
     typer.echo(f"   Duplicates: {metrics.duplicate_rows_percentage".1f"}%")
     typer.echo(f"   Issues Found: {len(report.issues_found)}")
 
     if report.recommendations:
-        typer.echo("
-💡 Recommendations:"        for rec in report.recommendations[:3]:  # Show top 3
+        typer.echo("💡 Recommendations:")
+        for rec in report.recommendations[:3]:  # Show top 3
             typer.echo(f"   • {rec}")
 
-    typer.echo("
-🎉 Data quality profiling completed!"
+    typer.echo("🎉 Data quality profiling completed!")
+
+
 def run_data_validation_command(
     data_path: Path,
     meta_path: Path | None = None,
@@ -2250,33 +2288,31 @@ def run_data_validation_command(
     save_json(result, results_file)
 
     # Display results
-    typer.echo("
-📊 Validation Results:"    typer.echo(f"   Status: {result['overall_status']}")
+    typer.echo("📊 Validation Results:")
+    typer.echo(f"   Status: {result['overall_status']}")
     typer.echo(f"   Total Rules: {result['total_rules']}")
     typer.echo(f"   Passed: {result['passed_rules']}")
     typer.echo(f"   Failed: {result['failed_rules']}")
 
     if result['errors']:
-        typer.echo("
-❌ Errors:"        for error in result['errors']:
+        typer.echo("❌ Errors:")
+        for error in result['errors']:
             typer.echo(f"   • {error}")
 
     if result['warnings']:
-        typer.echo("
-⚠️  Warnings:"        for warning in result['warnings']:
+        typer.echo("⚠️  Warnings:")
+        for warning in result['warnings']:
             typer.echo(f"   • {warning}")
 
     if result['overall_status'] == 'failed':
         if fail_on_first_error:
             raise typer.Exit("❌ Data validation failed")
         else:
-            typer.echo("
-⚠️  Validation completed with errors"
+            typer.echo("⚠️  Validation completed with errors")
     else:
-        typer.echo("
-✅ Validation passed!"
+        typer.echo("✅ Validation passed!")
     typer.echo(f"💾 Results saved to {results_file}")
-    typer.echo("🎉 Data validation completed!"
+    typer.echo("🎉 Data validation completed!")
 
 
 def run_data_cleansing_command(
@@ -2347,19 +2383,18 @@ def run_data_cleansing_command(
     typer.echo(f"📊 Cleansing summary saved to {summary_file}")
 
     # Display results
-    typer.echo("
-📊 Cleansing Results:"    typer.echo(f"   Original shape: {cleansing_summary['original_shape']}")
+    typer.echo("📊 Cleansing Results:")
+    typer.echo(f"   Original shape: {cleansing_summary['original_shape']}")
     typer.echo(f"   Final shape: {cleansing_summary['final_shape']}")
     typer.echo(f"   Rows removed: {cleansing_summary['rows_removed']}")
     typer.echo(f"   Columns removed: {cleansing_summary['columns_removed']}")
 
     if cleansing_summary['cleansing_steps']:
-        typer.echo("
-🔧 Applied cleansing steps:"        for step in cleansing_summary['cleansing_steps']:
+        typer.echo("🔧 Applied cleansing steps:")
+        for step in cleansing_summary['cleansing_steps']:
             typer.echo(f"   • {step}")
 
-    typer.echo("
-🎉 Data cleansing completed!"
+    typer.echo("🎉 Data cleansing completed!")
 
 
 def run_register_model_command(
@@ -2403,7 +2438,8 @@ def run_register_model_command(
         tags=tags or []
     )
 
-    typer.echo(f"✅ Model registered successfully!"    typer.echo(f"   Model: {model_name}")
+    typer.echo("✅ Model registered successfully!")
+    typer.echo(f"   Model: {model_name}")
     typer.echo(f"   Version: {version_number}")
     typer.echo(f"   Version ID: {version.version_id}")
     typer.echo(f"   Status: {version.status}")
@@ -2459,11 +2495,13 @@ def run_mlops_status_command(
             typer.echo(f"   Created: {latest_version.created_at.strftime('%Y-%m-%d %H:%M')}")
 
             if latest_version.performance_metrics:
-                typer.echo("   Performance metrics:"                for metric, value in latest_version.performance_metrics.items():
+                typer.echo("   Performance metrics:")
+                for metric, value in latest_version.performance_metrics.items():
                     typer.echo(f"     {metric}: {value".4f"}")
 
         # Show all versions
-        typer.echo("   All versions:"        for version in versions:
+        typer.echo("   All versions:")
+        for version in versions:
             status_icon = "✅" if version.status == "production" else "🔄" if version.status == "staging" else "📋"
             typer.echo(f"     {status_icon} {version.version_number} ({version.created_at.strftime('%Y-%m-%d')}) - {version.status}")
 
@@ -2501,7 +2539,8 @@ def run_deploy_model_command(
     )
 
     if success:
-        typer.echo("✅ Model deployed successfully!"        typer.echo(f"   Version ID: {version_id}")
+        typer.echo("✅ Model deployed successfully!")
+        typer.echo(f"   Version ID: {version_id}")
         typer.echo(f"   Environment: {environment_name}")
         typer.echo(f"   Traffic percentage: {traffic_percentage}%")
 
@@ -2547,7 +2586,8 @@ def run_rollback_deployment_command(
     )
 
     if success:
-        typer.echo("✅ Deployment rollback completed successfully!"        typer.echo(f"   Environment: {environment_name}")
+        typer.echo("✅ Deployment rollback completed successfully!")
+        typer.echo(f"   Environment: {environment_name}")
         typer.echo(f"   Target version: {target_version_id}")
         typer.echo(f"   Reason: {reason}")
 
@@ -2598,14 +2638,16 @@ def run_create_ab_test_command(
             success_metrics=success_metrics or ["concordance", "ibs"]
         )
 
-        typer.echo("✅ A/B test created successfully!"        typer.echo(f"   Test ID: {test_id}")
+        typer.echo("✅ A/B test created successfully!")
+        typer.echo(f"   Test ID: {test_id}")
         typer.echo(f"   Test name: {test_name}")
         typer.echo(f"   Model versions: {', '.join(model_versions)}")
         typer.echo(f"   Duration: {test_duration_days} days")
         typer.echo(f"   Traffic split: {traffic_split}")
 
         # Show traffic allocation
-        typer.echo("   Traffic allocation:"        for version_id, percentage in traffic_split.items():
+        typer.echo("   Traffic allocation:")
+        for version_id, percentage in traffic_split.items():
             version = registry.get_version(version_id)
             if version:
                 typer.echo(f"     {version.version_number}: {percentage*100".1f"}%")
@@ -2640,16 +2682,19 @@ def run_ab_test_results_command(
         typer.echo(f"❌ A/B test not found: {results['error']}")
         return
 
-    typer.echo("✅ A/B test results:"    typer.echo(f"   Test: {results['test_name']}")
+    typer.echo("✅ A/B test results:")
+    typer.echo(f"   Test: {results['test_name']}")
     typer.echo(f"   Status: {results['status']}")
     typer.echo(f"   Duration: {results['duration_days']} days")
 
     # Show version results
     if "version_results" in results:
-        typer.echo("   Version performance:"        for version_id, version_data in results["version_results"].items():
+        typer.echo("   Version performance:")
+        for version_id, version_data in results["version_results"].items():
             version = registry.get_version(version_id)
             if version:
-                typer.echo(f"     {version.version_number}:"                typer.echo(f"       Traffic: {version.traffic_percentage*100".1f"}%")
+                typer.echo(f"     {version.version_number}:")
+                typer.echo(f"       Traffic: {version.traffic_percentage*100".1f"}%")
                 if version_data["performance_metrics"]:
                     for metric, value in version_data["performance_metrics"].items():
                         typer.echo(f"       {metric}: {value".4f"}")
@@ -2657,7 +2702,8 @@ def run_ab_test_results_command(
     # Show statistical significance
     if "statistical_significance" in results:
         sig = results["statistical_significance"]
-        typer.echo("   Statistical analysis:"        for metric, p_value in sig.items():
+        typer.echo("   Statistical analysis:")
+        for metric, p_value in sig.items():
             if metric.endswith("_p_value"):
                 metric_name = metric.replace("_p_value", "")
                 significance = "significant" if p_value < 0.05 else "not significant"
@@ -2701,9 +2747,8 @@ def run_check_retraining_triggers_command(
             if trigger.enabled and model in auto_retrainer._get_models_for_trigger(trigger):
                 typer.echo(f"     - {trigger.trigger_name} ({trigger.trigger_type})")
 
-    typer.echo("
-💡 Recommendation: Run model retraining for the triggered models"
-    typer.echo("\n🎉 Trigger check completed!"
+    typer.echo("💡 Recommendation: Run model retraining for the triggered models")
+    typer.echo("\n🎉 Trigger check completed!")
 
 
 @log_function_call
@@ -2745,13 +2790,13 @@ def run_synthetic_data_command(
     typer.echo(f"📁 Outcomes saved to: {outcomes_file}")
 
     # Show summary statistics
-    typer.echo("
-📊 Dataset Summary:"    typer.echo(f"   • Features: {features.shape[1]}")
+    typer.echo("📊 Dataset Summary:")
+    typer.echo(f"   • Features: {features.shape[1]}")
     typer.echo(f"   • Samples: {features.shape[0]}")
     typer.echo(f"   • Event rate: {outcomes['event'].mean()".2%"}")
     typer.echo(f"   • Median survival time: {outcomes['time'].median()".1f"} days")
 
-    typer.echo("\n🎉 Synthetic data generation completed!"
+    typer.echo("\n🎉 Synthetic data generation completed!")
 
 
 @log_function_call
@@ -2844,8 +2889,8 @@ def run_performance_regression_command(
     passed_tests = sum(1 for r in results.values() if r.passed)
     total_tests = len(results)
 
-    typer.echo("
-📋 Regression Test Summary:"    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
+    typer.echo("📋 Regression Test Summary:")
+    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
     typer.echo(f"   • Results saved to: {results_file}")
 
     if passed_tests == total_tests:
@@ -2854,7 +2899,7 @@ def run_performance_regression_command(
         typer.echo("❌ Some regression tests FAILED!")
         typer.echo("💡 Recommendation: Investigate performance changes and update baselines if necessary")
 
-    typer.echo("\n🎉 Performance regression testing completed!"
+    typer.echo("\n🎉 Performance regression testing completed!")
 
 
 @log_function_call
@@ -2946,8 +2991,8 @@ def run_cv_integrity_command(
     passed_tests = sum(1 for r in results.values() if r.passed)
     total_tests = len(results)
 
-    typer.echo("
-📋 CV Integrity Check Summary:"    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
+    typer.echo("📋 CV Integrity Check Summary:")
+    typer.echo(f"   • Passed: {passed_tests}/{total_tests}")
     typer.echo(f"   • Results saved to: {results_file}")
 
     if passed_tests == total_tests:
@@ -2956,7 +3001,7 @@ def run_cv_integrity_command(
         typer.echo("❌ Some CV integrity checks FAILED!")
         typer.echo("💡 Recommendation: Review cross-validation setup for potential data leakage")
 
-    typer.echo("\n🎉 CV integrity check completed!"
+    typer.echo("\n🎉 CV integrity check completed!")
 
 
 @log_function_call
@@ -3020,10 +3065,10 @@ def run_benchmark_suite_command(
         json.dump(results_dict, f, indent=2)
 
     # Display results
-    typer.echo("
-📊 Benchmark Results:"    for test_name, result in results.items():
+    typer.echo("📊 Benchmark Results:")
+    for test_name, result in results.items():
         status = "✅" if result.passed else "❌"
         typer.echo(f"   {status} {test_name}: {result.value".3f"}")
 
     typer.echo(f"\n📁 Results saved to: {results_file}")
-    typer.echo("\n🎉 Benchmark suite completed!"
+    typer.echo("\n🎉 Benchmark suite completed!")
