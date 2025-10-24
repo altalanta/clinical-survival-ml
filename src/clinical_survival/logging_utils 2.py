@@ -6,6 +6,8 @@ import logging
 import sys
 from typing import Any
 
+from pythonjsonlogger import jsonlogger # Import JsonFormatter
+
 # Global logger instance
 logger = logging.getLogger("clinical_survival")
 
@@ -36,9 +38,8 @@ def setup_logging(verbose: bool = False, debug: bool = False) -> None:
 
     # Create formatter
     if debug:
-        formatter = logging.Formatter(
-            fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
-            datefmt="%H:%M:%S",
+        formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(filename)s %(lineno)d %(message)s"
         )
     else:
         formatter = logging.Formatter(fmt="%(message)s")

@@ -854,3 +854,4 @@ def _generate_html_report(report: Dict[str, Any]) -> str:
     return html
 
 
+

@@ -1487,6 +1487,42 @@ Running `clinical-ml run` populates `results/` with:
 - **Code Coverage**: Integrated `pytest-cov` to measure test coverage, with reports uploaded to Codecov.
 - **Consistent Linting**: `Ruff` and `Black` are enforced in CI to maintain code style and quality.
 
+## Data Versioning & Experiment Tracking
+
+This project uses [DVC (Data Version Control)](https://dvc.org/) to version data and [MLflow](https://mlflow.org/) for experiment tracking.
+
+- **Data Versioning with DVC**: Data files (e.g., in `data/toy/`) are versioned using DVC, ensuring that experiments are reproducible with the exact data snapshots. This allows tracking changes to data over time alongside code changes.
+  ```bash
+  # Add a data file to DVC
+  dvc add data/toy/toy_survival.csv
+
+  # To get the latest version of data
+  dvc pull
+  ```
+
+- **Experiment Tracking with MLflow**: All model training runs are tracked using MLflow, automatically logging parameters, metrics, and model artifacts. This provides a centralized platform to compare experiment results and reproduce models.
+  ```bash
+  # To view MLflow UI (run from project root)
+  mlflow ui
+  ```
+
+## Error Handling & Observability
+
+This project implements enhanced error handling and observability practices:
+
+- **Custom Exception Types**: Specific exception types (e.g., `ConfigurationError`, `DataError`, `ModelError`) are used to clearly categorize and handle different failure modes.
+- **Structured Logging**: Detailed, machine-readable logs are generated using `python-json-logger` when in debug mode, facilitating easier analysis and integration with monitoring tools.
+
+## Plugin-based Architecture for Model Integration
+
+This toolkit now features a flexible, plugin-based architecture for integrating survival models:
+
+- **Abstract Base Class (ABC)**: All survival models adhere to a `BaseSurvivalModel` interface defined in `src/clinical_survival/model_plugins.py`, ensuring consistent functionality (fit, predict_risk, predict_survival_function).
+- **Model Registry**: A `ModelRegistry` (also in `src/clinical_survival/model_plugins.py`) dynamically registers and retrieves model classes by name. This allows for easy extension and customization of the available survival models without modifying core logic.
+- **Simplified Model Factory**: The `make_model` function in `src/clinical_survival/models.py` now leverages the registry to instantiate models, promoting modularity and reducing boilerplate code.
+
+This architecture makes it straightforward to add new survival models or integrate custom implementations by simply defining a new class that inherits from `BaseSurvivalModel` and registering it with the `ModelRegistry`.
+
 ## License
 
 MIT — see `LICENSE`.
