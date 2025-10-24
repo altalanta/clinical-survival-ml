@@ -15,6 +15,7 @@ from sksurv.util import Surv
 from rich import print as rprint
 from rich.progress import Progress, SpinnerColumn, TextColumn, track
 from typing_extensions import Literal
+import mlflow
 
 from clinical_survival import __version__
 from clinical_survival.config_validation import (
@@ -102,6 +103,7 @@ from clinical_survival.constants import (
     DEFAULT_MODEL_GRID_PATH,
 )
 from pydantic import ValidationError
+from clinical_survival.errors import ConfigurationError, DataError, ModelError, ReportError # Import custom exceptions
 
 
 def _load_feature_spec(path: Path) -> dict[str, list[str]]:
@@ -129,14 +131,14 @@ def _prepare_data(
         log_function_call("load_yaml", {"path": str(config_path)})
     except Exception as e:
         log_error_with_context(e, f"loading config {config_path}")
-        raise typer.Exit(f"❌ Failed to load configuration file {config_path}: {e}") from e
+        raise ConfigurationError(f"Failed to load configuration file {config_path}: {e}") from e
 
     paths = params.setdefault("paths", {})
 
     # Validate required paths exist
     for required_path in ["data_csv", "metadata", "outdir"]:
         if required_path not in paths:
-            raise typer.Exit(f"❌ Required path '{required_path}' not found in configuration")
+            raise ConfigurationError(f"Required path '{required_path}' not found in configuration")
 
     if seed_override is not None:
         params["seed"] = seed_override
@@ -149,7 +151,12 @@ def _prepare_data(
     feature_spec_path = features_path_override or Path(
         paths.get("features", "configs/features.yaml")
     )
-    feature_spec = _load_feature_spec(Path(feature_spec_path))
+    # _load_feature_spec can raise FileNotFoundError
+    try:
+        feature_spec = _load_feature_spec(Path(feature_spec_path))
+    except FileNotFoundError as e:
+        log_error_with_context(e, f"loading feature specification {feature_spec_path}")
+        raise ConfigurationError(f"Feature specification file not found: {feature_spec_path}") from e
 
     external_cfg = params.get("external", {}).copy()
     external_csv = paths.get("external_csv")
@@ -175,7 +182,7 @@ def _prepare_data(
         )
     except Exception as e:
         log_error_with_context(e, "loading dataset")
-        raise typer.Exit(f"❌ Failed to load dataset: {e}") from e
+        raise DataError(f"Failed to load dataset: {e}") from e
 
     return train_split, external_split, metadata, params, feature_spec
 
@@ -295,247 +302,268 @@ def run_train_command(
     thresholds: list[float] | None,
 ) -> None:
     """Run the train command."""
-    train_split, external_split, metadata, params, feature_spec = _prepare_data(
-        config,
-        features_path_override=features_yaml,
-        seed_override=seed,
-        horizons_override=horizons,
-        thresholds_override=thresholds,
-    )
-    grid_config = load_yaml(grid)
-
-    eval_times = list(map(float, params.get("calibration", {}).get("times_days", [90, 180, 365])))
-    decision_thresholds = params.get("decision_curve", {}).get("thresholds", [0.05, 0.1, 0.2, 0.3])
-    seed_value = int(params.get("seed", 42))
-    bootstrap_reps = int(params.get("evaluation", {}).get("bootstrap", 200))
-
-    set_global_seed(seed_value)
-    outdir = ensure_dir(params["paths"]["outdir"])
-    artifacts_dir = ensure_dir(outdir / "artifacts")
-    models_root = ensure_dir(artifacts_dir / "models")
-    metrics_dir = ensure_dir(artifacts_dir / "metrics")
-    cv_root = ensure_dir(metrics_dir / "cv")
-
-    X_train_raw, y_train_df = train_split
-    external_present = external_split is not None
-
-    if external_present:
-        X_eval_raw, y_eval_df = external_split
-    else:
-        combined = pd.concat([X_train_raw, y_train_df], axis=1)
-        train_df, holdout_df = stratified_event_split(
-            combined,
-            params["event_col"],
-            params.get("test_split", 0.2),
-            seed_value,
+    with mlflow.start_run():
+        train_split, external_split, metadata, params, feature_spec = _prepare_data(
+            config,
+            features_path_override=features_yaml,
+            seed_override=seed,
+            horizons_override=horizons,
+            thresholds_override=thresholds,
         )
-        X_train_raw = train_df.drop(columns=[params["time_col"], params["event_col"]])
-        y_train_df = train_df[
-            [
-                params["time_col"],
+        grid_config = load_yaml(grid)
+
+        # Log parameters to MLflow
+        mlflow.log_params({f"params_{k}": v for k, v in params.items() if k != "paths"})
+        mlflow.log_params({f"grid_{k}": v for k, v in grid_config.items()})
+        mlflow.log_param("features_yaml", str(features_yaml) if features_yaml else "None")
+
+        eval_times = list(map(float, params.get("calibration", {}).get("times_days", [90, 180, 365])))
+        decision_thresholds = params.get("decision_curve", {}).get("thresholds", [0.05, 0.1, 0.2, 0.3])
+        seed_value = int(params.get("seed", 42))
+        bootstrap_reps = int(params.get("evaluation", {}).get("bootstrap", 200))
+
+        set_global_seed(seed_value)
+        outdir = ensure_dir(params["paths"]["outdir"])
+        artifacts_dir = ensure_dir(outdir / "artifacts")
+        models_root = ensure_dir(artifacts_dir / "models")
+        metrics_dir = ensure_dir(artifacts_dir / "metrics")
+        cv_root = ensure_dir(metrics_dir / "cv")
+
+        # Log DVC data dependencies
+        mlflow.log_param("dvc_data_csv", str(params["paths"]["data_csv"])) # Log the DVC-tracked data path
+        mlflow.log_param("dvc_metadata", str(params["paths"]["metadata"])) # Log the DVC-tracked metadata path
+
+        X_train_raw, y_train_df = train_split
+        external_present = external_split is not None
+
+        if external_present:
+            X_eval_raw, y_eval_df = external_split
+        else:
+            combined = pd.concat([X_train_raw, y_train_df], axis=1)
+            train_df, holdout_df = stratified_event_split(
+                combined,
                 params["event_col"],
-                *([params.get("id_col")] if params.get("id_col") in train_df.columns else []),
+                params.get("test_split", 0.2),
+                seed_value,
+            )
+            X_train_raw = train_df.drop(columns=[params["time_col"], params["event_col"]])
+            y_train_df = train_df[
+                [
+                    params["time_col"],
+                    params["event_col"],
+                    *([params.get("id_col")] if params.get("id_col") in train_df.columns else []),
+                ]
             ]
-        ]
-        X_eval_raw = holdout_df.drop(columns=[params["time_col"], params["event_col"]])
-        y_eval_df = holdout_df[[params["time_col"], params["event_col"]]]
+            X_eval_raw = holdout_df.drop(columns=[params["time_col"], params["event_col"]])
+            y_eval_df = holdout_df[[params["time_col"], params["event_col"]]]
 
-    X_train_features, feature_spec = prepare_features(X_train_raw, feature_spec)
-    X_eval_features, _ = prepare_features(X_eval_raw, feature_spec)
+        X_train_features, feature_spec = prepare_features(X_train_raw, feature_spec)
+        X_eval_features, _ = prepare_features(X_eval_raw, feature_spec)
 
-    X_train_features = X_train_features.reset_index(drop=True)
-    y_train_df = y_train_df.reset_index(drop=True)
-    X_eval_features = X_eval_features.reset_index(drop=True)
-    y_eval_df = y_eval_df.reset_index(drop=True)
+        X_train_features = X_train_features.reset_index(drop=True)
+        y_train_df = y_train_df.reset_index(drop=True)
+        X_eval_features = X_eval_features.reset_index(drop=True)
+        y_eval_df = y_eval_df.reset_index(drop=True)
 
-    sample_ids = (
-        y_train_df[params["id_col"]]
-        if params.get("id_col") and params["id_col"] in y_train_df
-        else pd.Series(np.arange(len(y_train_df)))
-    )
-    sample_ids = pd.Series(sample_ids).reset_index(drop=True)
-
-    leaderboard_rows: list[dict[str, Any]] = []
-    external_rows: list[dict[str, Any]] = []
-    trained_models: dict[str, PipelineModel] = {}
-
-    y_train_eval = y_train_df[[params["time_col"], params["event_col"]]].rename(
-        columns={params["time_col"]: "time", params["event_col"]: "event"}
-    )
-    y_eval_eval = y_eval_df[[params["time_col"], params["event_col"]]].rename(
-        columns={params["time_col"]: "time", params["event_col"]: "event"}
-    )
-
-    for model_name in params.get("models", []):
-        typer.echo(f"Training {model_name} ...")
-
-        # Handle ensemble model names specially for logging
-        display_name = model_name
-        model_params = grid_config.get(model_name, {})
-        if model_name == "stacking" and "base_models" in model_params:
-            base_models = (
-                model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
-            )
-            display_name = f"{model_name}({'+'.join(base_models)})"
-        elif model_name == "bagging" and "base_model" in model_params:
-            base_model = model_params["base_model"][0] if model_params["base_model"] else "rsf"
-            display_name = f"{model_name}({base_model})"
-        elif model_name == "dynamic" and "base_models" in model_params:
-            base_models = (
-                model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
-            )
-            display_name = f"{model_name}({'+'.join(base_models)})"
-
-        log_function_call(
-            "nested_cv",
-            {
-                "model": model_name,
-                "display_name": display_name,
-                "n_samples": len(X_train_features),
-                "n_splits": params.get("n_splits", 3),
-                "inner_splits": params.get("inner_splits", 2),
-            },
-        )
-
-        group_series = (
+        sample_ids = (
             y_train_df[params["id_col"]]
             if params.get("id_col") and params["id_col"] in y_train_df
-            else None
+            else pd.Series(np.arange(len(y_train_df)))
+        )
+        sample_ids = pd.Series(sample_ids).reset_index(drop=True)
+
+        leaderboard_rows: list[dict[str, Any]] = []
+        external_rows: list[dict[str, Any]] = []
+        trained_models: dict[str, PipelineModel] = {}
+
+        y_train_eval = y_train_df[[params["time_col"], params["event_col"]]].rename(
+            columns={params["time_col"]: "time", params["event_col"]: "event"}
+        )
+        y_eval_eval = y_eval_df[[params["time_col"], params["event_col"]]].rename(
+            columns={params["time_col"]: "time", params["event_col"]: "event"}
         )
 
-        try:
-            pipeline_factory = _build_pipeline_factory(
-                model_name, feature_spec, params.get("missing", {}), seed_value
-            )
-            result = nested_cv(
-                model_name,
-                X_train_features,
-                y_train_df[params["time_col"]],
-                y_train_df[params["event_col"]],
-                params.get("n_splits", 3),
-                params.get("inner_splits", 2),
-                model_params,
-                eval_times,
-                random_state=seed_value,
-                group_ids=group_series,
-                pipeline_builder=pipeline_factory,
-            )
-        except Exception as e:
-            log_error_with_context(e, f"training {model_name}")
-            typer.echo(f"❌ Failed to train {model_name}: {e}")
-            # For ensemble models, provide more specific error guidance
-            if model_name in ["stacking", "bagging", "dynamic"]:
-                typer.echo(
-                    "💡 Tip: Check that base models are properly configured in model_grid.yaml"
+        for model_name in params.get("models", []):
+            typer.echo(f"Training {model_name} ...")
+
+            # Handle ensemble model names specially for logging
+            display_name = model_name
+            model_params = grid_config.get(model_name, {})
+            if model_name == "stacking" and "base_models" in model_params:
+                base_models = (
+                    model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
                 )
-                typer.echo(f"   Current config: {model_params}")
-            continue
+                display_name = f"{model_name}({'+'.join(base_models)})"
+            elif model_name == "bagging" and "base_model" in model_params:
+                base_model = model_params["base_model"][0] if model_params["base_model"] else "rsf"
+                display_name = f"{model_name}({base_model})"
+            elif model_name == "dynamic" and "base_models" in model_params:
+                base_models = (
+                    model_params["base_models"][0] if model_params["base_models"] else ["coxph", "rsf"]
+                )
+                display_name = f"{model_name}({'+'.join(base_models)})"
 
-        trained_models[model_name] = result.estimator
-        model_dir = ensure_dir(models_root / model_name)
-        joblib.dump(result.estimator.pipeline, model_dir / "pipeline.joblib")
+            log_function_call(
+                "nested_cv",
+                {
+                    "model": model_name,
+                    "display_name": display_name,
+                    "n_samples": len(X_train_features),
+                    "n_splits": params.get("n_splits", 3),
+                    "inner_splits": params.get("inner_splits", 2),
+                },
+            )
+            mlflow.log_param(f"model_{model_name}_params", model_params) # Log model-specific parameters
 
-        cv_dir = ensure_dir(cv_root / model_name)
-        _save_fold_predictions(result, cv_dir, eval_times)
+            group_series = (
+                y_train_df[params["id_col"]]
+                if params.get("id_col") and params["id_col"] in y_train_df
+                else None
+            )
 
-        oof_df, oof_risk, oof_surv = _collect_oof_predictions(
-            result,
-            len(X_train_features),
-            eval_times,
-            sample_ids,
-            params["time_col"],
-            params["event_col"],
-            y_train_df,
+            try:
+                pipeline_factory = _build_pipeline_factory(
+                    model_name, feature_spec, params.get("missing", {}), seed_value
+                )
+                result = nested_cv(
+                    model_name,
+                    X_train_features,
+                    y_train_df[params["time_col"]],
+                    y_train_df[params["event_col"]],
+                    params.get("n_splits", 3),
+                    params.get("inner_splits", 2),
+                    model_params,
+                    eval_times,
+                    random_state=seed_value,
+                    group_ids=group_series,
+                    pipeline_builder=pipeline_factory,
+                )
+            except ModelError as e:
+                log_error_with_context(e, f"training {model_name}")
+                typer.echo(f"❌ Failed to train model {model_name}: {e}")
+                # For ensemble models, provide more specific error guidance
+                if model_name in ["stacking", "bagging", "dynamic"]:
+                    typer.echo(
+                        "💡 Tip: Check that base models are properly configured in model_grid.yaml"
+                    )
+                    typer.echo(f"   Current config: {model_params}")
+                continue
+            except Exception as e: # Catch any other unexpected exceptions during training
+                log_error_with_context(e, f"unexpected error during training {model_name}")
+                typer.echo(f"❌ An unexpected error occurred during training {model_name}: {e}")
+                continue
+
+            trained_models[model_name] = result.estimator
+            model_dir = ensure_dir(models_root / model_name)
+            joblib.dump(result.estimator.pipeline, model_dir / "pipeline.joblib")
+            mlflow.sklearn.log_model(sk_model=result.estimator.pipeline, artifact_path=f"models/{model_name}") # Log the trained model
+
+            cv_dir = ensure_dir(cv_root / model_name)
+            _save_fold_predictions(result, cv_dir, eval_times)
+
+            oof_df, oof_risk, oof_surv = _collect_oof_predictions(
+                result,
+                len(X_train_features),
+                eval_times,
+                sample_ids,
+                params["time_col"],
+                params["event_col"],
+                y_train_df,
+            )
+            oof_df.to_csv(cv_dir / "oof_predictions.csv", index=False)
+
+            calibration_dir = ensure_dir(metrics_dir / "calibration")
+            decision_dir = ensure_dir(metrics_dir / "decision_curves")
+
+            bins = int(params.get("calibration", {}).get("bins", 10))
+            cv_reliability = ipcw_reliability_curve(y_train_eval, oof_surv, eval_times, bins=bins)
+            cv_reliability.assign(label="cv").to_csv(
+                calibration_dir / f"reliability_{model_name}_cv.csv", index=False
+            )
+            plot_calibration_curve(
+                cv_reliability.assign(label="cv"),
+                calibration_dir / f"reliability_{model_name}_cv.png",
+            )
+
+            cv_decision = decision_curve_ipcw(y_train_eval, oof_surv, eval_times, decision_thresholds)
+            cv_decision.assign(label="cv").to_csv(
+                decision_dir / f"net_benefit_{model_name}_cv.csv", index=False
+            )
+            plot_decision_curve(
+                cv_decision.assign(label="cv"),
+                decision_dir / f"net_benefit_{model_name}_cv.png",
+            )
+
+            oof_metrics = compute_metrics(
+                y_train_eval,
+                oof_risk,
+                oof_surv,
+                eval_times,
+                bootstrap=bootstrap_reps,
+                seed=seed_value,
+            )
+            _metrics_to_json(oof_metrics, metrics_dir / f"metrics_oof_{model_name}.json")
+            mlflow.log_metrics({f"oof_{k}": v.estimate for k, v in oof_metrics.items()}) # Log OOF metrics
+
+            leaderboard_rows.append(
+                {
+                    "model": model_name,
+                    "concordance": oof_metrics["concordance"].estimate,
+                    "ibs": oof_metrics["ibs"].estimate,
+                }
+            )
+
+            eval_label = "external" if external_present else "holdout"
+            eval_result: EvaluationResult = evaluate_model(
+                result.estimator,
+                X_train_features,
+                y_train_eval,
+                X_eval_features,
+                y_eval_eval,
+                eval_times,
+                metrics_dir,
+                label=eval_label,
+                thresholds=decision_thresholds,
+                bins=int(params.get("calibration", {}).get("bins", 10)),
+                bootstrap=bootstrap_reps,
+                seed=seed_value,
+            )
+            eval_metrics = {name: interval.estimate for name, interval in eval_result.metrics.items()}
+            external_rows.append({"model": model_name, **eval_metrics})
+            reliability_path = metrics_dir / f"calibration_{model_name}_{eval_label}.csv"
+            decision_path = metrics_dir / f"decision_{model_name}_{eval_label}.csv"
+            eval_result.reliability.to_csv(reliability_path, index=False)
+            eval_result.decision.to_csv(decision_path, index=False)
+            _metrics_to_json(
+                eval_result.metrics,
+                metrics_dir / f"metrics_{eval_label}_{model_name}.json",
+            )
+            mlflow.log_metrics({f"eval_{k}": v for k, v in eval_metrics.items()}) # Log evaluation metrics
+
+        leaderboard_path = metrics_dir / "leaderboard.csv"
+        pd.DataFrame(leaderboard_rows).to_csv(leaderboard_path, index=False)
+        pd.DataFrame(external_rows).to_csv(metrics_dir / "external_summary.csv", index=False)
+        save_json(metadata, artifacts_dir / "dataset_metadata.json")
+
+        best_model_name = (
+            pd.DataFrame(leaderboard_rows)
+            .sort_values(by=["concordance", "ibs"], ascending=[False, True])
+            .iloc[0]["model"]
         )
-        oof_df.to_csv(cv_dir / "oof_predictions.csv", index=False)
+        save_json({"best_model": best_model_name}, metrics_dir / "best_model.json")
 
-        calibration_dir = ensure_dir(metrics_dir / "calibration")
-        decision_dir = ensure_dir(metrics_dir / "decision_curves")
+        final_label = params.get("external", {}).get("label", "holdout")
+        final_dir = ensure_dir(models_root / final_label)
+        joblib.dump(trained_models[best_model_name].pipeline, final_dir / "pipeline.joblib")
 
-        bins = int(params.get("calibration", {}).get("bins", 10))
-        cv_reliability = ipcw_reliability_curve(y_train_eval, oof_surv, eval_times, bins=bins)
-        cv_reliability.assign(label="cv").to_csv(
-            calibration_dir / f"reliability_{model_name}_cv.csv", index=False
+        # Log final best model as artifact with MLflow
+        mlflow.sklearn.log_model(sk_model=trained_models[best_model_name].pipeline, artifact_path=f"models/best_model_{final_label}")
+
+        typer.echo(
+            format_success_message(f"Training complete. Leaderboard saved to {leaderboard_path}")
         )
-        plot_calibration_curve(
-            cv_reliability.assign(label="cv"),
-            calibration_dir / f"reliability_{model_name}_cv.png",
-        )
-
-        cv_decision = decision_curve_ipcw(y_train_eval, oof_surv, eval_times, decision_thresholds)
-        cv_decision.assign(label="cv").to_csv(
-            decision_dir / f"net_benefit_{model_name}_cv.csv", index=False
-        )
-        plot_decision_curve(
-            cv_decision.assign(label="cv"),
-            decision_dir / f"net_benefit_{model_name}_cv.png",
-        )
-
-        oof_metrics = compute_metrics(
-            y_train_eval,
-            oof_risk,
-            oof_surv,
-            eval_times,
-            bootstrap=bootstrap_reps,
-            seed=seed_value,
-        )
-        _metrics_to_json(oof_metrics, metrics_dir / f"metrics_oof_{model_name}.json")
-
-        leaderboard_rows.append(
-            {
-                "model": model_name,
-                "concordance": oof_metrics["concordance"].estimate,
-                "ibs": oof_metrics["ibs"].estimate,
-            }
-        )
-
-        eval_label = "external" if external_present else "holdout"
-        eval_result: EvaluationResult = evaluate_model(
-            result.estimator,
-            X_train_features,
-            y_train_eval,
-            X_eval_features,
-            y_eval_eval,
-            eval_times,
-            metrics_dir,
-            label=eval_label,
-            thresholds=decision_thresholds,
-            bins=int(params.get("calibration", {}).get("bins", 10)),
-            bootstrap=bootstrap_reps,
-            seed=seed_value,
-        )
-        eval_metrics = {name: interval.estimate for name, interval in eval_result.metrics.items()}
-        external_rows.append({"model": model_name, **eval_metrics})
-        reliability_path = metrics_dir / f"calibration_{model_name}_{eval_label}.csv"
-        decision_path = metrics_dir / f"decision_{model_name}_{eval_label}.csv"
-        eval_result.reliability.to_csv(reliability_path, index=False)
-        eval_result.decision.to_csv(decision_path, index=False)
-        _metrics_to_json(
-            eval_result.metrics,
-            metrics_dir / f"metrics_{eval_label}_{model_name}.json",
-        )
-
-    leaderboard_path = metrics_dir / "leaderboard.csv"
-    pd.DataFrame(leaderboard_rows).to_csv(leaderboard_path, index=False)
-    pd.DataFrame(external_rows).to_csv(metrics_dir / "external_summary.csv", index=False)
-    save_json(metadata, artifacts_dir / "dataset_metadata.json")
-
-    best_model_name = (
-        pd.DataFrame(leaderboard_rows)
-        .sort_values(by=["concordance", "ibs"], ascending=[False, True])
-        .iloc[0]["model"]
-    )
-    save_json({"best_model": best_model_name}, metrics_dir / "best_model.json")
-
-    final_label = params.get("external", {}).get("label", "holdout")
-    final_dir = ensure_dir(models_root / final_label)
-    joblib.dump(trained_models[best_model_name].pipeline, final_dir / "pipeline.joblib")
-
-    typer.echo(
-        format_success_message(f"Training complete. Leaderboard saved to {leaderboard_path}")
-    )
-    typer.echo(f"Best model: {best_model_name}")
-    typer.echo(f"Results available in: {outdir}")
+        typer.echo(f"Best model: {best_model_name}")
+        typer.echo(f"Results available in: {outdir}")
 
 
 def run_evaluate_command(

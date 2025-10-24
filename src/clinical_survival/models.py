@@ -11,6 +11,8 @@ import pandas as pd
 from sksurv.ensemble import RandomSurvivalForest
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 
+from clinical_survival.model_plugins import BaseSurvivalModel, ModelRegistry # Import ModelRegistry
+
 try:  # pragma: no cover - optional dependency
     import xgboost as xgb
 except ImportError:  # pragma: no cover
@@ -76,31 +78,13 @@ def _ensure_dataframe(
     return pd.DataFrame(X, columns=columns)
 
 
-@dataclass
-class BaseSurvivalModel:
-    """Base wrapper exposing a shared interface."""
-
-    model: object
-    feature_names_: list[str] | None = None
-
-    def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> BaseSurvivalModel:
-        raise NotImplementedError
-
-    def predict_risk(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
-        raise NotImplementedError
-
-    def predict_survival_function(
-        self, X: pd.DataFrame | np.ndarray, times: Iterable[float]
-    ) -> np.ndarray:
-        raise NotImplementedError
-
-
+@ModelRegistry.register # Register CoxPHModel
 class CoxPHModel(BaseSurvivalModel):
     """Cox proportional hazards model wrapper."""
+    name: str = "coxph" # Add name attribute as required by ABC
 
     def __init__(self, **params: object) -> None:
-        super().__init__(CoxPHSurvivalAnalysis(**params))
-        self._baseline_survival_: pd.DataFrame | None = None
+        self.model = CoxPHSurvivalAnalysis(**params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> CoxPHModel:
         frame = _ensure_dataframe(X)
@@ -122,8 +106,10 @@ class CoxPHModel(BaseSurvivalModel):
         return output
 
 
+@ModelRegistry.register # Register RSFModel
 class RSFModel(BaseSurvivalModel):
     """Random survival forest wrapper."""
+    name: str = "rsf" # Add name attribute as required by ABC
 
     def __init__(self, **params: object) -> None:
         default_params = {
@@ -132,7 +118,7 @@ class RSFModel(BaseSurvivalModel):
             "min_samples_leaf": 5,
         }
         default_params.update(params)
-        super().__init__(RandomSurvivalForest(**default_params))
+        self.model = RandomSurvivalForest(**default_params)
 
     def fit(self, X: pd.DataFrame | np.ndarray, y: Sequence) -> RSFModel:
         frame = _ensure_dataframe(X)
@@ -153,6 +139,7 @@ class RSFModel(BaseSurvivalModel):
         return np.vstack([fn(times) for fn in surv_funcs])
 
 
+@ModelRegistry.register # Register XGBCoxModel
 class XGBCoxModel(BaseSurvivalModel):
     """XGBoost-based Cox model with GPU acceleration."""
 
@@ -180,7 +167,8 @@ class XGBCoxModel(BaseSurvivalModel):
 
         default_params.update(params)
         self.params = default_params
-        super().__init__(None)
+        self.model = None # Set model to None initially as required by ABC
+        self.name = "xgb_cox" # Set name attribute as required by ABC
         self._booster: xgb.Booster | None = None
         self._train_risk_: np.ndarray | None = None
         self._train_time_: np.ndarray | None = None
@@ -201,6 +189,7 @@ class XGBCoxModel(BaseSurvivalModel):
         self._booster = xgb.train(
             self.params, dtrain, num_boost_round=self.params.get("n_estimators", 200)
         )
+        self.model = self._booster # Set the booster as the model after fitting
         self._train_time_ = times
         self._train_event_ = events
         self._train_risk_ = np.exp(self._booster.predict(dtrain))
@@ -231,6 +220,7 @@ class XGBCoxModel(BaseSurvivalModel):
         return surv
 
 
+@ModelRegistry.register # Register XGBAFTModel
 class XGBAFTModel(BaseSurvivalModel):
     """XGBoost accelerated failure time model with GPU acceleration."""
 
@@ -260,7 +250,8 @@ class XGBAFTModel(BaseSurvivalModel):
 
         default_params.update(params)
         self.params = default_params
-        super().__init__(None)
+        self.model = None # Set model to None initially as required by ABC
+        self.name = "xgb_aft" # Set name attribute as required by ABC
         self._booster: xgb.Booster | None = None
         self._train_time_: np.ndarray | None = None
         self._train_event_: np.ndarray | None = None
@@ -279,6 +270,7 @@ class XGBAFTModel(BaseSurvivalModel):
         self._booster = xgb.train(
             self.params, dtrain, num_boost_round=self.params.get("n_estimators", 300)
         )
+        self.model = self._booster # Set the booster as the model after fitting
         self._train_time_ = times
         self._train_event_ = events
         return self
@@ -324,11 +316,13 @@ class XGBAFTModel(BaseSurvivalModel):
         return survival_arr
 
 
+@ModelRegistry.register # Register PipelineModel
 class PipelineModel(BaseSurvivalModel):
     """Wrapper around an sklearn pipeline exposing the survival interface."""
+    name: str = "pipeline_model" # Add name attribute as required by ABC
 
     def __init__(self, pipeline) -> None:
-        super().__init__(pipeline)
+        self.model = pipeline
         self.pipeline = pipeline
         self._estimator_step = "est"
 
@@ -360,25 +354,8 @@ def make_model(
     """Factory method returning a survival model wrapper with GPU support."""
 
     name = name.lower()
-    if name == "coxph":
-        return CoxPHModel(**params)
-    if name == "rsf":
-        rsf_params = {**params}
-        if random_state is not None:
-            rsf_params.setdefault("random_state", random_state)
-        return RSFModel(**rsf_params)
-    if name == "xgb_cox":
-        xgb_params = {**params}
-        if random_state is not None:
-            xgb_params.setdefault("seed", random_state)
-        return XGBCoxModel(use_gpu=use_gpu, gpu_id=gpu_id, **xgb_params)
-    if name == "xgb_aft":
-        aft_params = {**params}
-        if random_state is not None:
-            aft_params.setdefault("seed", random_state)
-        return XGBAFTModel(use_gpu=use_gpu, gpu_id=gpu_id, **aft_params)
 
-    # Ensemble models
+    # Handle ensemble models first, as they use make_model recursively
     if name == "stacking":
         if StackingEnsemble is None:
             raise ImportError("Ensemble methods not available")
@@ -404,4 +381,19 @@ def make_model(
         ]
         return DynamicEnsemble(base_models, random_state=random_state, **params)
 
-    raise ValueError(f"Unknown model: {name}")
+    # Retrieve model from registry for non-ensemble models
+    model_class = ModelRegistry.get_model(name)
+
+    # Prepare params for model instantiation
+    model_params = {**params}
+    if random_state is not None:
+        if name.startswith("xgb"):
+            model_params.setdefault("seed", random_state)
+        else:
+            model_params.setdefault("random_state", random_state)
+
+    # Instantiate the model
+    if name.startswith("xgb"):
+        return model_class(use_gpu=use_gpu, gpu_id=gpu_id, **model_params)
+    else:
+        return model_class(**model_params)
