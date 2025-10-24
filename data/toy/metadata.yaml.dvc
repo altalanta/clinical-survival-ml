@@ -1,0 +1,5 @@
+outs:
+- md5: 1245b119978afd1464a61a69284f790c
+  size: 602
+  hash: md5
+  path: metadata.yaml
