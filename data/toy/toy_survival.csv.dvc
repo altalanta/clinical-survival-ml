@@ -1,0 +1,5 @@
+outs:
+- md5: fb6b1c4d282d26eb1c53f73ba83e67db
+  size: 9026
+  hash: md5
+  path: toy_survival.csv
