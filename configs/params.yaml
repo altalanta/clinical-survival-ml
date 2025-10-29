@@ -132,3 +132,7 @@ mlops:
     auto_rollback_on_failure: true
     max_concurrent_deployments: 3
     deployment_timeout_minutes: 30
+mlflow_tracking:
+  enabled: true
+  experiment_name: "clinical-survival-ml"
+  tracking_uri: "file:./mlruns"

@@ -91,3 +91,6 @@ class FeaturesConfig(BaseModel):
     categorical: list[str] = Field(default_factory=list)
     drop: list[str] = Field(default_factory=list)
 
+
+
+
