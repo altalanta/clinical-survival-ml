@@ -1,38 +1,34 @@
 # syntax=docker/dockerfile:1
 
-ARG PYTHON_VERSION=3.11
-ARG UV_VERSION=0.4.23
+ARG PYTHON_VERSION=3.10
 
 FROM python:${PYTHON_VERSION}-slim AS builder
-ARG UV_VERSION
-ENV UV_SYSTEM_PYTHON=1
-WORKDIR /workspace
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip uv==${UV_VERSION}
-COPY pyproject.toml uv.lock README.md ./
+
+# Install poetry
+RUN pip install poetry
+
+# Copy project files
+COPY pyproject.toml poetry.lock README.md ./
 COPY src ./src
-COPY configs ./configs
-COPY examples ./examples
-RUN uv sync --frozen --extra dev --extra docs
+
+# Install dependencies
+RUN poetry install --no-root --all-extras
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
-ARG UV_VERSION
-ENV UV_SYSTEM_PYTHON=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/opt/clinical-ml/bin:$PATH"
+
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
 WORKDIR /workspace
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-RUN useradd --create-home --system clinicalml
-RUN pip install --upgrade pip uv==${UV_VERSION}
-COPY --from=builder /workspace/.venv /opt/clinical-ml
-COPY pyproject.toml uv.lock README.md ./
-COPY src ./src
-COPY configs ./configs
-COPY examples ./examples
-COPY scripts ./scripts
-COPY configs/report_template.html.j2 configs/report_template.html.j2
-ENV VIRTUAL_ENV="/opt/clinical-ml"
-USER clinicalml
-HEALTHCHECK --interval=1m --timeout=5s CMD clinical-ml --help >/dev/null 2>&1 || exit 1
-ENTRYPOINT ["clinical-ml"]
+
+# Create a non-root user
+RUN useradd --create-home --system appuser
+USER appuser
+
+# Copy virtual environment and source code
+COPY --from=builder /root/.cache/pypoetry/virtualenvs /opt/venv
+COPY . .
+
+# Set entrypoint
+ENTRYPOINT ["poetry", "run", "clinical-ml"]
 CMD ["--help"]
