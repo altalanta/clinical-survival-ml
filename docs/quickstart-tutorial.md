@@ -18,7 +18,7 @@ git clone https://github.com/your-org/clinical-survival-ml.git
 cd clinical-survival-ml
 
 # Run the automated installer (handles everything)
-make install
+poetry install --all-extras
 ```
 
 **What happens**:
@@ -34,27 +34,30 @@ make install
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
+# Install poetry
+pip install poetry
+
 # Install the package
-pip install -e .
+poetry install
 
 # Install development dependencies (optional)
-pip install -e .[dev]
+poetry install --with dev
 
 # Install GPU support (optional)
-pip install -e .[gpu]
+poetry install --extras "gpu"
 ```
 
 ### Option 3: Docker (For Production)
 
 ```bash
 # Build the Docker image
-make deploy-build
+docker-compose up --build
 
 # Run training
-make deploy-run
+docker-compose run app poetry run clinical-ml run --config configs/params.yaml
 
 # Start the API server
-make deploy-serve
+docker-compose up
 ```
 
 ## 🎯 Your First Analysis
@@ -63,7 +66,7 @@ Let's run a complete survival analysis on the included toy dataset:
 
 ```bash
 # This runs the full pipeline: preprocessing → training → evaluation → reporting
-clinical-ml run --config configs/params.yaml
+poetry run clinical-ml run --config configs/params.yaml
 ```
 
 **Expected output**:
@@ -110,16 +113,16 @@ Let's examine what happens during training:
 
 ```bash
 # 1. Load and validate configuration
-clinical-ml validate-config --config configs/params.yaml
+poetry run clinical-ml validate-config --config configs/params.yaml
 
 # 2. Load your data
-clinical-ml load --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
+poetry run clinical-ml load --data data/toy/toy_survival.csv --meta data/toy/metadata.yaml
 
 # 3. Train models with custom grid search
-clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+poetry run clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
 
 # 4. Evaluate on holdout set
-clinical-ml evaluate --config configs/params.yaml
+poetry run clinical-ml evaluate --config configs/params.yaml
 ```
 
 ## 🎛️ Configuration Files Explained
@@ -176,10 +179,10 @@ drop_features:
 
 ```bash
 # Check if GPU acceleration is available
-clinical-ml benchmark-hardware --config configs/params.yaml
+poetry run clinical-ml benchmark-hardware --config configs/params.yaml
 
 # Train with GPU acceleration
-clinical-ml run --config configs/params.yaml --use-gpu --gpu-id 0
+poetry run clinical-ml run --config configs/params.yaml --use-gpu --gpu-id 0
 ```
 
 **Performance gains**:
@@ -191,7 +194,7 @@ clinical-ml run --config configs/params.yaml --use-gpu --gpu-id 0
 
 ```bash
 # Find the best model and hyperparameters automatically
-clinical-ml automl \
+poetry run clinical-ml automl \
   --config configs/params.yaml \
   --time-limit 1800 \
   --model-types coxph rsf xgb_cox xgb_aft \
@@ -202,7 +205,7 @@ clinical-ml automl \
 
 ```bash
 # Generate "what-if" scenarios for clinical decision support
-clinical-ml counterfactual \
+poetry run clinical-ml counterfactual \
   --model xgb_cox \
   --target-risk 0.3 \
   --n-counterfactuals 3
@@ -214,13 +217,13 @@ clinical-ml counterfactual \
 
 ```bash
 # 1. Register your trained model
-clinical-ml register-model \
+poetry run clinical-ml register-model \
   --model results/artifacts/models/xgb_cox.pkl \
   --model-name survival_model \
   --version-number 1.0.0
 
 # 2. Deploy as REST API
-clinical-ml serve --models-dir results/artifacts/models
+poetry run clinical-ml serve --models-dir results/artifacts/models
 
 # 3. Make predictions
 curl -X POST "http://localhost:8000/predict" \
@@ -232,32 +235,26 @@ curl -X POST "http://localhost:8000/predict" \
 
 ### Installation Problems
 
+If you encounter dependency conflicts, try running:
 ```bash
-# If pip fails, try conda
-mamba env create -f env/environment.yml
-mamba activate clinical-survival-ml
-
-# If you get dependency conflicts
-pip install --upgrade pip setuptools wheel
-pip install -e . --no-deps
-pip install -r requirements.txt
+poetry update
 ```
 
 ### Memory Issues with Large Datasets
 
 ```bash
 # Enable memory optimization
-clinical-ml run --config configs/params.yaml --max-memory-gb 16
+poetry run clinical-ml run --config configs/params.yaml --max-memory-gb 16
 
 # Or use partitioning for very large datasets
-clinical-ml run --config configs/params.yaml --use-partitioning --chunk-size 5000
+poetry run clinical-ml run --config configs/params.yaml --use-partitioning --chunk-size 5000
 ```
 
 ### GPU Issues
 
 ```bash
 # Check GPU availability
-clinical-ml benchmark-hardware --config configs/params.yaml
+poetry run clinical-ml benchmark-hardware --config configs/params.yaml
 
 # Common fixes:
 # 1. Install GPU drivers
@@ -285,5 +282,8 @@ clinical-ml benchmark-hardware --config configs/params.yaml
 ---
 
 **🎉 Congratulations!** You now have everything you need to build, evaluate, and deploy clinical survival models. Start with the 5-minute quickstart and explore the advanced features as needed!
+
+
+
 
 
