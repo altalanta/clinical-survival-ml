@@ -3,9 +3,9 @@
 Thanks for helping improve `clinical-survival-ml`! The project ships with a deterministic pipeline and a collection of companion scripts. Before opening a pull request, please make sure the commands below succeed on your machine:
 
 ```bash
-make install
-pytest -q
-bash examples/toy/run_toy.sh
+poetry install --all-extras
+poetry run pytest -q
+poetry run bash examples/toy/run_toy.sh
 docker build -t clinical-survival-ml .
 docker run --rm -p 8000:8000 -v $(pwd)/results:/workspace/results clinical-survival-ml serve --models-dir results/artifacts/models
 ```

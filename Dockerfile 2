@@ -1,0 +1,19 @@
+FROM python:3.10-slim
+
+WORKDIR /workspace
+
+# Install poetry
+RUN pip install poetry
+
+# Copy project files
+COPY pyproject.toml poetry.lock ./
+
+# Install dependencies, create venv
+RUN poetry install --no-dev --no-root
+
+# Copy the rest of the application
+COPY . .
+
+# Set the entrypoint to run the application with poetry
+ENTRYPOINT ["poetry", "run", "clinical-ml"]
+CMD ["--help"]

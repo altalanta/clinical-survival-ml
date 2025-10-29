@@ -10,10 +10,10 @@ Reproducible end-to-end survival modelling for tabular clinical outcomes. The to
 
 ```bash
 # 1. Clone and install (takes ~2 minutes)
-make install
+poetry install --all-extras
 
 # 2. Run the toy example (takes ~1 minute)
-clinical-ml run --config configs/params.yaml
+poetry run clinical-ml run --config configs/params.yaml
 
 # 3. View results
 open results/report.html
@@ -27,55 +27,31 @@ That's it! You now have a complete survival analysis with models, evaluation met
 
 ### 📋 Installation Options
 
-#### Automated Installation (Recommended)
+#### Poetry (Recommended)
 
 ```bash
-# Clone the repository and run the automated installer
-make install
-# or manually:
-./install.sh
+# 1. Install poetry (if you don't have it)
+# https://python-poetry.org/docs/#installation
+curl -sSL https://install.python-poetry.org | python3 -
+
+# 2. Clone the repository
+git clone https://github.com/artemisfolle/clinical-survival-ml.git
+cd clinical-survival-ml
+
+# 3. Install dependencies
+poetry install --all-extras
+
+# 4. Activate the virtual environment
+poetry shell
 ```
 
-This will automatically handle dependency installation and package setup.
-
-#### Conda with Conda-Lock (Recommended for Reproducibility)
-
-```bash
-# 1. Install conda-lock (if you don't have it already)
-conda install -c conda-forge conda-lock
-
-# 2. Generate the lock file (this ensures reproducible environments across platforms)
-conda-lock -f env/environment.yml --lockfile conda-lock.yml
-
-# 3. Create the environment from the lock file
-conda create --name clinical-survival-ml --file conda-lock.yml
-conda activate clinical-survival-ml
-
-# 4. Install the project in editable mode and pre-commit hooks
-pip install -e .[dev]
-pre-commit install
-```
-
-This method uses `conda-lock` to create highly reproducible environments by pinning all direct and transitive dependencies.
-
-#### Conda / mamba
-
-```bash
-mamba env create -f env/environment.yml
-mamba activate clinical-survival-ml
-make install
-pre-commit install
-```
-
-This method uses the standard `conda` or `mamba` environment creation. For greater reproducibility, consider the `Conda with Conda-Lock` option above.
+This method uses `poetry` to create a reproducible environment.
 
 #### GPU Acceleration (Optional)
 
 ```bash
 # Install with GPU support for 5-10x faster training
-pip install clinical-survival-ml[gpu]
-# or
-make install-gpu
+poetry install --extras "gpu"
 ```
 
 ### Docker
@@ -84,12 +60,7 @@ make install-gpu
 
 ```bash
 # Build and start the API server
-make deploy-build
-make deploy-serve
-
-# Or use the deployment script directly
-./deploy.sh build
-./deploy.sh serve
+docker-compose up --build
 ```
 
 #### Manual Docker Commands
@@ -109,16 +80,11 @@ docker run -p 8000:8000 -v $(pwd)/results:/workspace/results \
 
 ### Troubleshooting Installation
 
-If you encounter pip compatibility issues, the installer will automatically fall back to alternative methods:
-
-- **requirements.txt**: Uses a traditional requirements file for maximum compatibility
-- **Conda/Mamba**: Uses conda-forge packages when available
-- **Direct installation**: Installs the package without development dependencies
-
+If you encounter issues, please refer to the Poetry documentation for resolving dependency conflicts.
 Then run the toy workflow:
 
 ```bash
-clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
+poetry run clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
 ```
 
 ## Deployment & API
@@ -127,7 +93,7 @@ After training models, you can deploy them as a REST API:
 
 ```bash
 # Serve the trained models
-clinical-ml serve --models-dir results/artifacts/models
+poetry run clinical-ml serve --models-dir results/artifacts/models
 
 # Access the API at http://localhost:8000
 # Interactive documentation at http://localhost:8000/docs
@@ -188,16 +154,16 @@ Monitor model performance and detect drift:
 
 ```bash
 # Monitor model predictions for drift detection
-clinical-ml monitor --config configs/params.yaml --data data/new_data.csv
+poetry run clinical-ml monitor --config configs/params.yaml --data data/new_data.csv
 
 # Check for drift and performance issues
-clinical-ml drift --config configs/params.yaml --model coxph --days 7
+poetry run clinical-ml drift --config configs/params.yaml --model coxph --days 7
 
 # View monitoring status dashboard
-clinical-ml monitoring-status --config configs/params.yaml
+poetry run clinical-ml monitoring-status --config configs/params.yaml
 
 # Reset monitoring baselines
-clinical-ml reset-monitoring --config configs/params.yaml --confirm
+poetry run clinical-ml reset-monitoring --config configs/params.yaml --confirm
 ```
 
 The monitoring system tracks:
@@ -213,7 +179,7 @@ The monitoring system tracks:
 Before running experiments, validate your configuration files:
 
 ```bash
-clinical-ml validate-config
+poetry run clinical-ml validate-config
 ```
 
 This command checks that all configuration files conform to their expected schemas and provides helpful error messages for any issues. Run this before training to catch configuration problems early.
@@ -232,16 +198,16 @@ Choose your path based on your role and experience level:
 
 ```bash
 # 1. Basic survival analysis
-clinical-ml run --config configs/params.yaml
+poetry run clinical-ml run --config configs/params.yaml
 
 # 2. Get risk stratification for your patients
-clinical-ml risk-stratification --config configs/params.yaml --data patient_data.csv
+poetry run clinical-ml risk-stratification --config configs/params.yaml --data patient_data.csv
 
 # 3. Generate clinical explanations
-clinical-ml clinical-interpret --config configs/params.yaml --output-format html
+poetry run clinical-ml clinical-interpret --config configs/params.yaml --output-format html
 
 # 4. Create decision support report
-clinical-ml report --config configs/params.yaml --out clinical_report.html
+poetry run clinical-ml report --config configs/params.yaml --out clinical_report.html
 ```
 
 **What you'll get**: Interactive HTML reports showing patient risk levels, key risk factors, and clinical recommendations.
@@ -252,16 +218,16 @@ clinical-ml report --config configs/params.yaml --out clinical_report.html
 
 ```bash
 # 1. Train multiple models with cross-validation
-clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
+poetry run clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
 
 # 2. Optimize hyperparameters automatically
-clinical-ml automl --config configs/params.yaml --time-limit 1800
+poetry run clinical-ml automl --config configs/params.yaml --time-limit 1800
 
 # 3. Evaluate model performance thoroughly
-clinical-ml evaluate --config configs/params.yaml
+poetry run clinical-ml evaluate --config configs/params.yaml
 
 # 4. Analyze feature importance
-clinical-ml explain --config configs/params.yaml --model xgb_cox
+poetry run clinical-ml explain --config configs/params.yaml --model xgb_cox
 ```
 
 **What you'll get**: Detailed performance metrics, calibration plots, decision curves, and SHAP explanations.
@@ -272,16 +238,16 @@ clinical-ml explain --config configs/params.yaml --model xgb_cox
 
 ```bash
 # 1. Train and register models for production
-clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model
+poetry run clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model
 
 # 2. Deploy model as API
-clinical-ml deploy-model --version-id abc123 --environment production
+poetry run clinical-ml deploy-model --version-id abc123 --environment production
 
 # 3. Set up monitoring
-clinical-ml monitor --config configs/params.yaml --data production_data.csv
+poetry run clinical-ml monitor --config configs/params.yaml --data production_data.csv
 
 # 4. Enable incremental learning
-clinical-ml configure-incremental --update-frequency-days 7 --min-samples-for-update 100
+poetry run clinical-ml configure-incremental --update-frequency-days 7 --min-samples-for-update 100
 ```
 
 **What you'll get**: Production-ready APIs, monitoring dashboards, and automated model updates.
@@ -294,13 +260,13 @@ clinical-ml configure-incremental --update-frequency-days 7 --min-samples-for-up
 
 ```bash
 # Check hardware capabilities
-clinical-ml benchmark-hardware --config configs/params.yaml
+poetry run clinical-ml benchmark-hardware --config configs/params.yaml
 
 # Automatic memory optimization for large datasets
-clinical-ml run --config configs/params.yaml  # Automatically uses optimal settings
+poetry run clinical-ml run --config configs/params.yaml  # Automatically uses optimal settings
 
 # Manual GPU configuration
-clinical-ml run --config configs/params.yaml --gpu-id 0 --max-memory-gb 16
+poetry run clinical-ml run --config configs/params.yaml --gpu-id 0 --max-memory-gb 16
 ```
 
 **Benefits**:
@@ -312,7 +278,7 @@ clinical-ml run --config configs/params.yaml --gpu-id 0 --max-memory-gb 16
 
 ```bash
 # Generate "what-if" scenarios for clinical decision support
-clinical-ml counterfactual --model xgb_cox --target-risk 0.3 --n-counterfactuals 3
+poetry run clinical-ml counterfactual --model xgb_cox --target-risk 0.3 --n-counterfactuals 3
 
 # Example output:
 # "To reduce risk from 0.65 to 0.30, decrease SOFA score by 2.1 points"
@@ -322,13 +288,13 @@ clinical-ml counterfactual --model xgb_cox --target-risk 0.3 --n-counterfactuals
 
 ```bash
 # Monitor model performance over time
-clinical-ml monitor --config configs/params.yaml --days 30
+poetry run clinical-ml monitor --config configs/params.yaml --days 30
 
 # Detect data drift automatically
-clinical-ml drift --config configs/params.yaml --model coxph --days 7
+poetry run clinical-ml drift --config configs/params.yaml --model coxph --days 7
 
 # Get monitoring dashboard
-clinical-ml monitoring-status --config configs/params.yaml
+poetry run clinical-ml monitoring-status --config configs/params.yaml
 ```
 
 ## Automated Model Selection (AutoML)
@@ -346,24 +312,24 @@ The toolkit includes advanced automated machine learning capabilities for optima
 
 ```bash
 # Install with AutoML dependencies
-pip install clinical-survival-ml[automl]
+poetry install --extras "automl"
 
 # Or install optuna separately
-pip install optuna>=3.0
+poetry add optuna
 ```
 
 ### AutoML Usage
 
 ```bash
 # Run automated optimization for 30 minutes
-clinical-ml automl --config configs/params.yaml \
+poetry run clinical-ml automl --config configs/params.yaml \
                    --data data/toy/toy_survival.csv \
                    --meta data/toy/metadata.yaml \
                    --time-limit 1800 \
                    --model-types coxph rsf xgb_cox xgb_aft stacking
 
 # Optimize for specific models only
-clinical-ml automl --config configs/params.yaml \
+poetry run clinical-ml automl --config configs/params.yaml \
                    --data data/your_data.csv \
                    --meta data/metadata.yaml \
                    --time-limit 3600 \
@@ -372,7 +338,7 @@ clinical-ml automl --config configs/params.yaml \
                    --output-dir results/automl
 
 # Use different optimization metric
-clinical-ml automl --config configs/params.yaml \
+poetry run clinical-ml automl --config configs/params.yaml \
                    --data data/your_data.csv \
                    --meta data/metadata.yaml \
                    --time-limit 1800 \
@@ -394,13 +360,13 @@ The toolkit includes intelligent GPU acceleration for XGBoost models with automa
 
 ```bash
 # Check hardware capabilities and benchmark performance
-clinical-ml benchmark-hardware --config configs/params.yaml \
+poetry run clinical-ml benchmark-hardware --config configs/params.yaml \
                                --data data/toy/toy_survival.csv \
                                --meta data/toy/metadata.yaml \
                                --model-type xgb_cox
 
 # Test specific GPU device
-clinical-ml benchmark-hardware --config configs/params.yaml \
+poetry run clinical-ml benchmark-hardware --config configs/params.yaml \
                                --data data/your_data.csv \
                                --meta data/metadata.yaml \
                                --model-type xgb_aft \
@@ -452,7 +418,7 @@ For example:
 
 ```bash
 # Generate counterfactuals for a specific risk target
-clinical-ml counterfactual --config configs/params.yaml \
+poetry run clinical-ml counterfactual --config configs/params.yaml \
                           --data data/toy/toy_survival.csv \
                           --meta data/toy/metadata.yaml \
                           --model xgb_cox \
@@ -460,7 +426,7 @@ clinical-ml counterfactual --config configs/params.yaml \
                           --n-counterfactuals 3
 
 # Generate counterfactuals for survival time target
-clinical-ml counterfactual --config configs/params.yaml \
+poetry run clinical-ml counterfactual --config configs/params.yaml \
                           --data data/your_data.csv \
                           --meta data/metadata.yaml \
                           --model rsf \
@@ -468,7 +434,7 @@ clinical-ml counterfactual --config configs/params.yaml \
                           --method genetic
 
 # Generate multiple counterfactuals with different methods
-clinical-ml counterfactual --config configs/params.yaml \
+poetry run clinical-ml counterfactual --config configs/params.yaml \
                           --data data/your_data.csv \
                           --meta data/metadata.yaml \
                           --model xgb_aft \
@@ -578,7 +544,7 @@ incremental_learning:
 
 ```bash
 # Configure incremental learning settings
-clinical-ml configure-incremental \
+poetry run clinical-ml configure-incremental \
   --config-path configs/incremental_config.json \
   --update-frequency-days 7 \
   --min-samples-for-update 50 \
@@ -588,7 +554,7 @@ clinical-ml configure-incremental \
   --create-backup-before-update
 
 # Update models with new patient data
-clinical-ml update-models \
+poetry run clinical-ml update-models \
   --config configs/params.yaml \
   --data data/new_patients.csv \
   --meta data/new_metadata.yaml \
@@ -597,7 +563,7 @@ clinical-ml update-models \
   --incremental-config configs/incremental_config.json
 
 # Check incremental learning status
-clinical-ml incremental-status \
+poetry run clinical-ml incremental-status \
   --models-dir results/artifacts/models \
   --model-names coxph xgb_cox
 ```
@@ -675,7 +641,7 @@ Or create a dedicated distributed configuration file:
 
 ```bash
 # Configure distributed computing settings
-clinical-ml configure-distributed \
+poetry run clinical-ml configure-distributed \
   --config-path configs/distributed_config.json \
   --cluster-type dask \
   --n-workers 8 \
@@ -684,7 +650,7 @@ clinical-ml configure-distributed \
   --n-partitions 16
 
 # Benchmark scaling performance across dataset sizes
-clinical-ml distributed-benchmark \
+poetry run clinical-ml distributed-benchmark \
   --config configs/params.yaml \
   --cluster-type dask \
   --n-workers 8 \
@@ -693,7 +659,7 @@ clinical-ml distributed-benchmark \
   --output-dir results/distributed_benchmark
 
 # Train model on large dataset using distributed computing
-clinical-ml distributed-train \
+poetry run clinical-ml distributed-train \
   --config configs/params.yaml \
   --data data/large_clinical_dataset.csv \
   --meta data/large_metadata.yaml \
@@ -704,7 +670,7 @@ clinical-ml distributed-train \
   --output-dir results/distributed_training
 
 # Evaluate model performance using distributed computing
-clinical-ml distributed-evaluate \
+poetry run clinical-ml distributed-evaluate \
   --config configs/params.yaml \
   --data data/test_dataset.csv \
   --meta data/test_metadata.yaml \
@@ -791,7 +757,7 @@ clinical_interpretability:
 
 ```bash
 # Generate comprehensive clinical interpretability report (HTML format)
-clinical-ml clinical-interpret \
+poetry run clinical-ml clinical-interpret \
   --config configs/params.yaml \
   --data data/patient_data.csv \
   --meta data/metadata.yaml \
@@ -801,7 +767,7 @@ clinical-ml clinical-interpret \
   --patient-ids patient_001 patient_002 patient_003
 
 # Generate risk stratification report
-clinical-ml risk-stratification \
+poetry run clinical-ml risk-stratification \
   --config configs/params.yaml \
   --data data/patient_data.csv \
   --meta data/metadata.yaml \
@@ -942,7 +908,7 @@ mlops:
 
 ```bash
 # Register a trained model in the MLOps registry
-clinical-ml register-model \
+poetry run clinical-ml register-model \
   --model results/artifacts/models/coxph.pkl \
   --model-name survival_model \
   --version-number 1.0.0 \
@@ -951,19 +917,19 @@ clinical-ml register-model \
   --registry-path results/mlops
 
 # Check MLOps registry status
-clinical-ml mlops-status \
+poetry run clinical-ml mlops-status \
   --registry-path results/mlops \
   --model-name survival_model
 
 # Deploy model to staging environment
-clinical-ml deploy-model \
+poetry run clinical-ml deploy-model \
   --version-id abc123def456 \
   --environment staging \
   --traffic-percentage 50 \
   --approved-by clinical_lead
 
 # Create A/B test between model versions
-clinical-ml create-ab-test \
+poetry run clinical-ml create-ab-test \
   --test-name "Model Comparison Study" \
   --model-versions abc123 def456 \
   --traffic-split '{"abc123": 0.7, "def456": 0.3}' \
@@ -971,12 +937,12 @@ clinical-ml create-ab-test \
   --success-metrics concordance ibs
 
 # Check if retraining triggers should fire
-clinical-ml check-retraining-triggers \
+poetry run clinical-ml check-retraining-triggers \
   --registry-path results/mlops \
   --model-name survival_model
 
 # Rollback deployment if needed
-clinical-ml rollback-deployment \
+poetry run clinical-ml rollback-deployment \
   --environment production \
   --target-version abc123 \
   --reason performance_degradation
@@ -1042,24 +1008,24 @@ The MLOps system generates:
 
 ```bash
 # 1. Train and register initial model
-clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
-clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model --version-number 1.0.0
+poetry run clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+poetry run clinical-ml register-model --model results/artifacts/models/coxph.pkl --model-name survival_model --version-number 1.0.0
 
 # 2. Deploy to staging for validation
-clinical-ml deploy-model --version-id abc123 --environment staging --approved-by clinical_lead
+poetry run clinical-ml deploy-model --version-id abc123 --environment staging --approved-by clinical_lead
 
 # 3. Monitor performance and check for drift
-clinical-ml monitor --config configs/params.yaml --data data/new_patients.csv
-clinical-ml drift --config configs/params.yaml --model survival_model --days 7
+poetry run clinical-ml monitor --config configs/params.yaml --data data/new_patients.csv
+poetry run clinical-ml drift --config configs/params.yaml --model survival_model --days 7
 
 # 4. Create A/B test for model improvement
-clinical-ml create-ab-test --test-name "Hyperparameter Study" --model-versions abc123 def456 --traffic-split '{"abc123": 0.5, "def456": 0.5}'
+poetry run clinical-ml create-ab-test --test-name "Hyperparameter Study" --model-versions abc123 def456 --traffic-split '{"abc123": 0.5, "def456": 0.5}'
 
 # 5. Check triggers and potentially retrain
-clinical-ml check-retraining-triggers --model-name survival_model
+poetry run clinical-ml check-retraining-triggers --model-name survival_model
 
 # 6. Promote best model to production
-clinical-ml deploy-model --version-id def456 --environment production --traffic-percentage 100 --approved-by clinical_director
+poetry run clinical-ml deploy-model --version-id def456 --environment production --traffic-percentage 100 --approved-by clinical_director
 ```
 
 This comprehensive MLOps system enables safe, automated, and auditable model lifecycle management for clinical AI applications.
@@ -1113,7 +1079,7 @@ data_quality:
 
 ```bash
 # Generate comprehensive data quality profile
-clinical-ml data-quality-profile \
+poetry run clinical-ml data-quality-profile \
   --data data/patient_data.csv \
   --meta data/metadata.yaml \
   --output-dir results/data_quality \
@@ -1121,7 +1087,7 @@ clinical-ml data-quality-profile \
   --include-anomaly-detection
 
 # Validate dataset against clinical data rules
-clinical-ml data-validation \
+poetry run clinical-ml data-validation \
   --data data/patient_data.csv \
   --meta data/metadata.yaml \
   --validation-rules default \
@@ -1129,7 +1095,7 @@ clinical-ml data-validation \
   --strict-mode
 
 # Cleanse dataset based on quality assessment
-clinical-ml data-cleansing \
+poetry run clinical-ml data-cleansing \
   --data data/patient_data.csv \
   --meta data/metadata.yaml \
   --output-dir results/data_cleansing \
@@ -1210,19 +1176,19 @@ Data quality integrates seamlessly with:
 
 ```bash
 # 1. Profile incoming data
-clinical-ml data-quality-profile --data data/new_patients.csv --output-format html
+poetry run clinical-ml data-quality-profile --data data/new_patients.csv --output-format html
 
 # 2. Validate against clinical standards
-clinical-ml data-validation --data data/new_patients.csv --strict-mode
+poetry run clinical-ml data-validation --data data/new_patients.csv --strict-mode
 
 # 3. Cleanse data based on quality assessment
-clinical-ml data-cleansing --data data/new_patients.csv --remove-duplicates --handle-outliers
+poetry run clinical-ml data-cleansing --data data/new_patients.csv --remove-duplicates --handle-outliers
 
 # 4. Train model with quality-assured data
-clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
+poetry run clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml
 
 # 5. Monitor data quality continuously
-clinical-ml monitor --config configs/params.yaml --data data/production_patients.csv
+poetry run clinical-ml monitor --config configs/params.yaml --data data/production_patients.csv
 ```
 
 This comprehensive data quality framework ensures that clinical AI models are built on reliable, validated data, meeting the highest standards for healthcare applications.
@@ -1237,13 +1203,13 @@ Generate realistic synthetic datasets for testing and validation:
 
 ```bash
 # Generate ICU survival dataset
-clinical-ml synthetic-data --scenario icu --n-samples 2000 --output-dir data/synthetic
+poetry run clinical-ml synthetic-data --scenario icu --n-samples 2000 --output-dir data/synthetic
 
 # Generate cancer survival dataset
-clinical-ml synthetic-data --scenario cancer --n-samples 1500
+poetry run clinical-ml synthetic-data --scenario cancer --n-samples 1500
 
 # Generate cardiovascular dataset
-clinical-ml synthetic-data --scenario cardiovascular --n-samples 3000
+poetry run clinical-ml synthetic-data --scenario cardiovascular --n-samples 3000
 ```
 
 **Available Scenarios**:
@@ -1257,13 +1223,13 @@ Detect performance degradations automatically:
 
 ```bash
 # Run regression tests against baseline performance
-clinical-ml performance-regression --config configs/params.yaml
+poetry run clinical-ml performance-regression --config configs/params.yaml
 
 # Use custom tolerance for performance changes
-clinical-ml performance-regression --config configs/params.yaml --tolerance 0.03
+poetry run clinical-ml performance-regression --config configs/params.yaml --tolerance 0.03
 
 # Specify custom baseline file
-clinical-ml performance-regression --baseline-file tests/my_baselines.json
+poetry run clinical-ml performance-regression --baseline-file tests/my_baselines.json
 ```
 
 **Features**:
@@ -1278,13 +1244,13 @@ Detect data leakage and validate CV setup:
 
 ```bash
 # Check CV integrity across all models
-clinical-ml cv-integrity --config configs/params.yaml
+poetry run clinical-ml cv-integrity --config configs/params.yaml
 
 # Test with more CV folds for thorough validation
-clinical-ml cv-integrity --config configs/params.yaml --cv-folds 10
+poetry run clinical-ml cv-integrity --config configs/params.yaml --cv-folds 10
 
 # Custom output directory for results
-clinical-ml cv-integrity --output-dir tests/cv_validation
+poetry run clinical-ml cv-integrity --output-dir tests/cv_validation
 ```
 
 **Detection Capabilities**:
@@ -1298,13 +1264,13 @@ Compare performance against other survival analysis libraries:
 
 ```bash
 # Run full benchmark suite
-clinical-ml benchmark-suite --config configs/params.yaml
+poetry run clinical-ml benchmark-suite --config configs/params.yaml
 
 # Benchmark against specific libraries
-clinical-ml benchmark-suite --include-sksurv --include-lifelines
+poetry run clinical-ml benchmark-suite --include-sksurv --include-lifelines
 
 # Custom output directory
-clinical-ml benchmark-suite --output-dir tests/benchmark_2024
+poetry run clinical-ml benchmark-suite --output-dir tests/benchmark_2024
 ```
 
 **Benchmarked Libraries**:
@@ -1321,32 +1287,32 @@ The testing framework integrates seamlessly with continuous integration:
 make test-quality
 
 # Generate test data for CI
-clinical-ml synthetic-data --scenario icu --n-samples 500 --random-state 42
+poetry run clinical-ml synthetic-data --scenario icu --n-samples 500 --random-state 42
 
 # Run regression tests
-clinical-ml performance-regression --config configs/params.yaml --tolerance 0.02
+poetry run clinical-ml performance-regression --config configs/params.yaml --tolerance 0.02
 
 # Validate CV integrity
-clinical-ml cv-integrity --config configs/params.yaml --cv-folds 3
+poetry run clinical-ml cv-integrity --config configs/params.yaml --cv-folds 3
 ```
 
 ### Testing Workflow Example
 
 ```bash
 # 1. Generate synthetic test data
-clinical-ml synthetic-data --scenario icu --n-samples 1000 --output-dir tests/data
+poetry run clinical-ml synthetic-data --scenario icu --n-samples 1000 --output-dir tests/data
 
 # 2. Update baseline performance
-clinical-ml performance-regression --config configs/params.yaml --output-dir tests/baselines
+poetry run clinical-ml performance-regression --config configs/params.yaml --output-dir tests/baselines
 
 # 3. Run integrity checks
-clinical-ml cv-integrity --config configs/params.yaml --output-dir tests/integrity
+poetry run clinical-ml cv-integrity --config configs/params.yaml --output-dir tests/integrity
 
 # 4. Benchmark against other libraries
-clinical-ml benchmark-suite --config configs/params.yaml --output-dir tests/benchmarks
+poetry run clinical-ml benchmark-suite --config configs/params.yaml --output-dir tests/benchmarks
 
 # 5. Generate quality report
-clinical-ml report --config configs/params.yaml --out tests/quality_report.html
+poetry run clinical-ml report --config configs/params.yaml --out tests/quality_report.html
 ```
 
 ### Quality Assurance Benefits
@@ -1367,73 +1333,73 @@ Complete reference for all CLI commands with practical examples:
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml run`** | Complete pipeline: train → evaluate → report | `clinical-ml run --config configs/params.yaml` |
-| **`clinical-ml train`** | Train models only | `clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml` |
-| **`clinical-ml evaluate`** | Evaluate trained models | `clinical-ml evaluate --config configs/params.yaml` |
-| **`clinical-ml report`** | Generate HTML report | `clinical-ml report --config configs/params.yaml --out results/report.html` |
+| **`poetry run clinical-ml run`** | Complete pipeline: train → evaluate → report | `poetry run clinical-ml run --config configs/params.yaml` |
+| **`poetry run clinical-ml train`** | Train models only | `poetry run clinical-ml train --config configs/params.yaml --grid configs/model_grid.yaml` |
+| **`poetry run clinical-ml evaluate`** | Evaluate trained models | `poetry run clinical-ml evaluate --config configs/params.yaml` |
+| **`poetry run clinical-ml report`** | Generate HTML report | `poetry run clinical-ml report --config configs/params.yaml --out results/report.html` |
 
 ### 🤖 Model Training & Selection
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml automl`** | Automated model selection | `clinical-ml automl --config configs/params.yaml --time-limit 1800` |
-| **`clinical-ml benchmark-hardware`** | Check GPU/CPU performance | `clinical-ml benchmark-hardware --config configs/params.yaml` |
-| **`clinical-ml counterfactual`** | Generate explanations | `clinical-ml counterfactual --model xgb_cox --target-risk 0.3` |
+| **`poetry run clinical-ml automl`** | Automated model selection | `poetry run clinical-ml automl --config configs/params.yaml --time-limit 1800` |
+| **`poetry run clinical-ml benchmark-hardware`** | Check GPU/CPU performance | `poetry run clinical-ml benchmark-hardware --config configs/params.yaml` |
+| **`poetry run clinical-ml counterfactual`** | Generate explanations | `poetry run clinical-ml counterfactual --model xgb_cox --target-risk 0.3` |
 
 ### 📊 Data Management
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml load`** | Load and validate data | `clinical-ml load --data data.csv --meta metadata.yaml` |
-| **`clinical-ml validate-config`** | Check configuration | `clinical-ml validate-config --config configs/params.yaml` |
-| **`clinical-ml data-quality-profile`** | Assess data quality | `clinical-ml data-quality-profile --data data.csv --output-format html` |
+| **`poetry run clinical-ml load`** | Load and validate data | `poetry run clinical-ml load --data data.csv --meta metadata.yaml` |
+| **`poetry run clinical-ml validate-config`** | Check configuration | `poetry run clinical-ml validate-config --config configs/params.yaml` |
+| **`poetry run clinical-ml data-quality-profile`** | Assess data quality | `poetry run clinical-ml data-quality-profile --data data.csv --output-format html` |
 
 ### 🔬 Model Interpretability
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml explain`** | Feature importance & SHAP | `clinical-ml explain --config configs/params.yaml --model xgb_cox` |
-| **`clinical-ml clinical-interpret`** | Clinical explanations | `clinical-ml clinical-interpret --data patients.csv --output-format html` |
-| **`clinical-ml risk-stratification`** | Patient risk categories | `clinical-ml risk-stratification --data patients.csv` |
+| **`poetry run clinical-ml explain`** | Feature importance & SHAP | `poetry run clinical-ml explain --config configs/params.yaml --model xgb_cox` |
+| **`poetry run clinical-ml clinical-interpret`** | Clinical explanations | `poetry run clinical-ml clinical-interpret --data patients.csv --output-format html` |
+| **`poetry run clinical-ml risk-stratification`** | Patient risk categories | `poetry run clinical-ml risk-stratification --data patients.csv` |
 
 ### 🚀 Production & MLOps
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml serve`** | Start prediction API | `clinical-ml serve --models-dir results/artifacts/models` |
-| **`clinical-ml register-model`** | Register for deployment | `clinical-ml register-model --model model.pkl --model-name survival_model` |
-| **`clinical-ml deploy-model`** | Deploy to environment | `clinical-ml deploy-model --version-id v1.0.0 --environment production` |
-| **`clinical-ml monitor`** | Monitor performance | `clinical-ml monitor --config configs/params.yaml --data new_data.csv` |
+| **`poetry run clinical-ml serve`** | Start prediction API | `poetry run clinical-ml serve --models-dir results/artifacts/models` |
+| **`poetry run clinical-ml register-model`** | Register for deployment | `poetry run clinical-ml register-model --model model.pkl --model-name survival_model` |
+| **`poetry run clinical-ml deploy-model`** | Deploy to environment | `poetry run clinical-ml deploy-model --version-id v1.0.0 --environment production` |
+| **`poetry run clinical-ml monitor`** | Monitor performance | `poetry run clinical-ml monitor --config configs/params.yaml --data new_data.csv` |
 
 ### 📈 Monitoring & Maintenance
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml drift`** | Detect data drift | `clinical-ml drift --config configs/params.yaml --model coxph --days 7` |
-| **`clinical-ml update-models`** | Incremental learning | `clinical-ml update-models --data new_patients.csv --models-dir models/` |
-| **`clinical-ml monitoring-status`** | View monitoring dashboard | `clinical-ml monitoring-status --config configs/params.yaml` |
+| **`poetry run clinical-ml drift`** | Detect data drift | `poetry run clinical-ml drift --config configs/params.yaml --model coxph --days 7` |
+| **`poetry run clinical-ml update-models`** | Incremental learning | `poetry run clinical-ml update-models --data new_patients.csv --models-dir models/` |
+| **`poetry run clinical-ml monitoring-status`** | View monitoring dashboard | `poetry run clinical-ml monitoring-status --config configs/params.yaml` |
 
 ### ⚙️ Advanced Configuration
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml configure-incremental`** | Set up incremental learning | `clinical-ml configure-incremental --update-frequency-days 7` |
-| **`clinical-ml configure-distributed`** | Configure distributed computing | `clinical-ml configure-distributed --cluster-type dask --n-workers 8` |
-| **`clinical-ml distributed-train`** | Train on large datasets | `clinical-ml distributed-train --data large.csv --cluster-type dask` |
+| **`poetry run clinical-ml configure-incremental`** | Set up incremental learning | `poetry run clinical-ml configure-incremental --update-frequency-days 7` |
+| **`poetry run clinical-ml configure-distributed`** | Configure distributed computing | `poetry run clinical-ml configure-distributed --cluster-type dask --n-workers 8` |
+| **`poetry run clinical-ml distributed-train`** | Train on large datasets | `poetry run clinical-ml distributed-train --data large.csv --cluster-type dask` |
 
 ### 🧪 Testing & Quality Assurance
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| **`clinical-ml synthetic-data`** | Generate synthetic datasets | `clinical-ml synthetic-data --scenario icu --n-samples 2000` |
-| **`clinical-ml performance-regression`** | Automated regression testing | `clinical-ml performance-regression --config configs/params.yaml` |
-| **`clinical-ml cv-integrity`** | Check CV data leakage | `clinical-ml cv-integrity --config configs/params.yaml --cv-folds 5` |
-| **`clinical-ml benchmark-suite`** | Benchmark vs other libraries | `clinical-ml benchmark-suite --config configs/params.yaml` |
+| **`poetry run clinical-ml synthetic-data`** | Generate synthetic datasets | `poetry run clinical-ml synthetic-data --scenario icu --n-samples 2000` |
+| **`poetry run clinical-ml performance-regression`** | Automated regression testing | `poetry run clinical-ml performance-regression --config configs/params.yaml` |
+| **`poetry run clinical-ml cv-integrity`** | Check CV data leakage | `poetry run clinical-ml cv-integrity --config configs/params.yaml --cv-folds 5` |
+| **`poetry run clinical-ml benchmark-suite`** | Benchmark vs other libraries | `poetry run clinical-ml benchmark-suite --config configs/params.yaml` |
 
 ---
 
 **💡 Pro Tips**:
-- Use `--help` with any command for detailed options: `clinical-ml run --help`
+- Use `--help` with any command for detailed options: `poetry run clinical-ml run --help`
 - All commands support `--config` for shared configuration
 - Use `--output-dir` to specify where results are saved
 - Enable verbose output with `--verbose` for troubleshooting
@@ -1444,7 +1410,7 @@ Specify an external split either by providing a secondary CSV (`paths.external_c
 
 ## Outputs
 
-Running `clinical-ml run` populates `results/` with:
+Running `poetry run clinical-ml run` populates `results/` with:
 
 - `artifacts/models/` – serialized transformers and fitted estimators.
 - `artifacts/metrics/` – cross-validation summaries, leaderboards, calibration and net benefit plots.
@@ -1483,7 +1449,7 @@ Running `clinical-ml run` populates `results/` with:
 
 - `make unit` – run the pytest suite with code coverage (uses synthetic toy data under `data/toy/`).
 - `make smoke` – executes the full CLI pipeline on the toy dataset.
-- GitHub Actions workflow (`.github/workflows/ci.yml`) provisions the Conda environment, runs linting (Ruff, Black, Mypy), unit tests with code coverage, smoke test, and uploads `results/` and code coverage artifacts.
+- GitHub Actions workflow (`.github/workflows/ci.yml`) provisions the Poetry environment, runs linting (Ruff, Black, Mypy), unit tests with code coverage, smoke test, and uploads `results/` and code coverage artifacts.
 - **Code Coverage**: Integrated `pytest-cov` to measure test coverage, with reports uploaded to Codecov.
 - **Consistent Linting**: `Ruff` and `Black` are enforced in CI to maintain code style and quality.
 
@@ -1503,7 +1469,7 @@ This project uses [DVC (Data Version Control)](https://dvc.org/) to version data
 - **Experiment Tracking with MLflow**: All model training runs are tracked using MLflow, automatically logging parameters, metrics, and model artifacts. This provides a centralized platform to compare experiment results and reproduce models.
   ```bash
   # To view MLflow UI (run from project root)
-  mlflow ui
+  poetry run mlflow ui
   ```
 
 ## Error Handling & Observability
