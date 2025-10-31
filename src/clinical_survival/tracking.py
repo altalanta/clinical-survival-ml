@@ -39,3 +39,4 @@ class MLflowTracker:
         if self.is_enabled:
             return mlflow.get_artifact_uri()
         return None
+
