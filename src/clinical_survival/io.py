@@ -5,21 +5,37 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import yaml
+from typing import Union, Optional, Dict, Any
 
-from clinical_survival.utils import load_yaml
+from clinical_survival.config import ParamsConfig, FeaturesConfig
 
 REQUIRED_COLUMNS = {"time", "event"}
 
 
+def load_params_config(path: Union[str, Path]) -> ParamsConfig:
+    """Loads and validates the main parameters configuration file."""
+    with Path(path).open("r", encoding="utf-8") as handle:
+        raw_config = yaml.safe_load(handle) or {}
+    return ParamsConfig.model_validate(raw_config)
+
+
+def load_features_config(path: Union[str, Path]) -> FeaturesConfig:
+    """Loads and validates the features configuration file."""
+    with Path(path).open("r", encoding="utf-8") as handle:
+        raw_config = yaml.safe_load(handle) or {}
+    return FeaturesConfig.model_validate(raw_config)
+
+
 def load_dataset(
-    csv_path: str | Path,
-    metadata_path: str | Path,
+    csv_path: Union[str, Path],
+    metadata_path: Union[str, Path],
     *,
     time_col: str = "time",
     event_col: str = "event",
-    external_config: dict[str, object] | None = None,
+    external_config: Optional[Dict[str, Any]] = None,
 ) -> tuple[
-    tuple[pd.DataFrame, pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame] | None, dict[str, object]
+    tuple[pd.DataFrame, pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame] | None, Dict[str, Any]
 ]:
     """Load dataset and optional external validation split.
 
@@ -35,7 +51,9 @@ def load_dataset(
     if not metadata_path.exists():
         raise FileNotFoundError(metadata_path)
 
-    metadata = load_yaml(metadata_path)
+    with Path(metadata_path).open("r", encoding="utf-8") as handle:
+        metadata = yaml.safe_load(handle) or {}
+
     external_cfg = external_config.copy() if external_config else {}
     group_column = external_cfg.get("group_column", "group")
     train_value = external_cfg.get("train_value", "train")
