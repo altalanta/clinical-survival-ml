@@ -20,3 +20,4 @@ This page provides a complete reference for all CLI commands with practical exam
 | **`poetry run clinical-ml counterfactual`** | Generate explanations | `poetry run clinical-ml counterfactual --model xgb_cox --target-risk 0.3` |
 
 ... and so on for all commands.
+

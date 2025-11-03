@@ -61,3 +61,4 @@ Then run the toy workflow:
 ```bash
 poetry run clinical-ml run --config configs/params.yaml --grid configs/model_grid.yaml
 ```
+
