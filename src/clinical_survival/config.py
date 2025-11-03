@@ -119,6 +119,10 @@ class MLflowTrackingConfig(BaseModel):
     experiment_name: str
     tracking_uri: str
 
+class CachingConfig(BaseModel):
+    enabled: bool
+    dir: str
+
 class ParamsConfig(BaseModel):
     seed: int
     n_splits: int
@@ -142,8 +146,10 @@ class ParamsConfig(BaseModel):
     clinical_interpretability: ClinicalInterpretabilityConfig = Field(alias="clinical_interpretability")
     mlops: MLOpsConfig
     mlflow_tracking: MLflowTrackingConfig = Field(alias="mlflow_tracking")
+    caching: CachingConfig
 
 class FeaturesConfig(BaseModel):
     numeric: List[str]
     categorical: List[str]
     drop: List[str]
+

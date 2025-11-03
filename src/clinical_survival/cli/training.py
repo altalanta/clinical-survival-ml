@@ -23,18 +23,18 @@ def run(
 ) -> None:
     """Run the complete pipeline: train, evaluate, and generate a report."""
     console.print("🚀 Starting the full clinical survival analysis pipeline...", style="bold green")
-    
+
     params_config = load_params_config(config_path)
     features_config = load_features_config(params_config.paths.features)
     grid_config = load_yaml(grid_path)
-    
+
     console.print("1. [bold blue]Training and evaluating models...[/bold blue]")
     train_and_evaluate(
-        params_config=params_config, 
-        features_config=features_config, 
+        params_config=params_config,
+        features_config=features_config,
         grid_config=grid_config
     )
-    
+
     console.print("2. [bold blue]Generating HTML report...[/bold blue]")
     generate_report(params_config)
 
