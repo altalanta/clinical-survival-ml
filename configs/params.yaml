@@ -136,3 +136,6 @@ mlflow_tracking:
   enabled: true
   experiment_name: "clinical-survival-ml"
   tracking_uri: "file:./mlruns"
+caching:
+  enabled: true
+  dir: "artifacts/cache"
