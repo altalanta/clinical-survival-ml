@@ -27,6 +27,39 @@ poetry run clinical-ml run --config configs/params.yaml
 open results/report.html
 ```
 
+## Caching
+
+To speed up development and experimentation, this project uses `joblib` to cache the results of the expensive data preprocessing step. When you re-run the training pipeline with the same data and configuration, the preprocessed data will be loaded from a local cache, saving significant time.
+
+Caching is enabled by default and can be configured in `configs/params.yaml`:
+
+```yaml
+caching:
+  enabled: true
+  dir: "artifacts/cache"
+```
+
+## Experiment Tracking with MLflow
+
+This project is integrated with [MLflow](https://mlflow.org/) for comprehensive experiment tracking and model management. All training runs are automatically logged, allowing you to track parameters, metrics, and artifacts, as well as version and manage your models.
+
+### Viewing Experiments
+
+To view the MLflow UI and compare your experiment runs, execute the following command from the root of the project:
+
+```bash
+poetry run mlflow ui
+```
+
+This will start the MLflow Tracking UI (by default at `http://127.0.0.1:5000`), where you can:
+-   Compare the performance of different models.
+-   View the parameters and metrics for each run.
+-   See the artifacts that were generated, including plots and the trained model files.
+
+### Model Registry
+
+Trained models are automatically registered in the MLflow Model Registry, providing a central place to manage their lifecycle from development to production. You can use the MLflow UI to transition models between stages (e.g., from `Staging` to `Production`).
+
 ## Contributing
 
 Contributions are welcome! Please see the `CONTRIBUTING.md` file for details.

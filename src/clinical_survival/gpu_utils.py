@@ -436,4 +436,3 @@ def create_gpu_accelerator(
         gpu_id=gpu_id,
         n_jobs=n_jobs,
     )
-

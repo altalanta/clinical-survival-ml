@@ -18,19 +18,19 @@ from clinical_survival.config import ParamsConfig
 
 def generate_report(params_config: ParamsConfig) -> None:
     """Generates the final HTML report from artifacts."""
-    
+
     outdir = ensure_dir(params_config.paths.outdir)
     artifacts_dir = ensure_dir(outdir / "artifacts")
     metrics_dir = ensure_dir(artifacts_dir / "metrics")
-    
+
     leaderboard_path = metrics_dir / "leaderboard.csv"
     dataset_meta_path = artifacts_dir / "dataset_metadata.json"
-    
+
     dataset_meta = {}
     if dataset_meta_path.exists():
         with open(dataset_meta_path, "r") as f:
             dataset_meta = json.load(f)
-            
+
     leaderboard_html = ""
     if leaderboard_path.exists():
         import pandas as pd
@@ -38,24 +38,24 @@ def generate_report(params_config: ParamsConfig) -> None:
         leaderboard_html = leaderboard_df.to_html(
             index=False, classes="table table-striped", justify="center"
         )
-        
+
     template_path = Path("configs/report_template.html.j2")
     if not template_path.exists():
         raise FileNotFoundError(f"Report template not found at {template_path}")
 
     with open(template_path, "r") as f:
         template = jinja2.Template(f.read())
-        
+
     rendered_html = template.render(
         leaderboard_table=leaderboard_html,
         dataset_meta=dataset_meta,
         params=params_config.model_dump(),
     )
-    
+
     report_path = outdir / "report.html"
     with open(report_path, "w") as f:
         f.write(rendered_html)
-    
+
     print(f"Report generated at: {report_path}")
 
 
