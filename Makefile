@@ -72,3 +72,7 @@ test-cv-integrity: ## check cross-validation integrity
 .PHONY: test-benchmark
 test-benchmark: ## run benchmark suite
 	poetry run clinical-ml benchmark-suite --config configs/params.yaml
+
+.PHONY: docs
+docs: ## build sphinx documentation
+	poetry run sphinx-build docs docs/_build/html
