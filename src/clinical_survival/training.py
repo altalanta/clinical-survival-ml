@@ -3,6 +3,7 @@ from typing import Dict, Any
 import pandas as pd
 from sklearn.model_selection import KFold
 from joblib import Memory
+import great_expectations as gx
 
 from clinical_survival.config import ParamsConfig, FeaturesConfig
 from clinical_survival.io import load_dataset
@@ -28,12 +29,18 @@ def train_and_evaluate(
     grid_config: Dict[str, Any]
 ) -> None:
     """
-    Runs the core training and evaluation pipeline.
+    Runs the core training and evaluation pipeline with MLflow tracking.
     """
-    print("Running training and evaluation...")
-    print(f"  Seed: {params_config.seed}")
-    print(f"  Models: {params_config.models}")
-    print(f"  Numeric Features: {features_config.numeric}")
+    # --- 1. Data Validation ---
+    print("--- Running Data Validation ---")
+    context = gx.get_context()
+    checkpoint_result = context.run_checkpoint(checkpoint_name="toy_survival_checkpoint")
+    if not checkpoint_result["success"]:
+        print("Data validation failed! Please check the Data Docs for details.")
+        # Optionally, build data docs on failure
+        # context.build_data_docs()
+        raise RuntimeError("Data validation failed.")
+    print("✅ Data validation successful.")
 
     set_global_seed(params_config.seed)
     tracker = MLflowTracker(params_config.mlflow_tracking.model_dump())
