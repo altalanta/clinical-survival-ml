@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from . import training
+from . import training, data, monitoring, mlops, testing
 
 app = typer.Typer(
     name="clinical-survival-ml",
@@ -17,6 +17,10 @@ app = typer.Typer(
 console = Console()
 
 app.add_typer(training.app, name="training")
+app.add_typer(data.app, name="data")
+app.add_typer(monitoring.app, name="monitoring")
+app.add_typer(mlops.app, name="mlops")
+app.add_typer(testing.app, name="testing")
 
 if __name__ == "__main__":
     app()

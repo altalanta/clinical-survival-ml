@@ -1216,3 +1216,4 @@ def _generate_quality_report_html(report: DataQualityReport) -> str:
 
     return html
 
+

@@ -27,6 +27,26 @@ poetry run clinical-ml run --config configs/params.yaml
 open results/report.html
 ```
 
+## Data Validation with Great Expectations
+
+This project uses [Great Expectations](https://greatexpectations.io/) to ensure the quality and validity of input data. Before any training is performed, the pipeline runs a checkpoint to verify that the data conforms to a predefined set of expectations.
+
+### How It Works
+
+1.  **Expectation Suite**: A collection of expectations about the data is defined in a JSON file located in the `great_expectations/expectations` directory. This suite acts as a "unit test for your data."
+2.  **Validation Checkpoint**: Before the training pipeline runs, it executes a checkpoint that validates the input data against this suite.
+3.  **Data Docs**: If the validation fails, the pipeline will stop, and you can review the detailed validation results in the "Data Docs," which are HTML reports that break down the expectation results.
+
+### Running Validation
+
+To generate the initial Expectation Suite and view the Data Docs, run the following script from the root of the project:
+
+```bash
+poetry run python scripts/create_expectations.py
+```
+
+This will also build the Data Docs. You can view them by opening `great_expectations/uncommitted/data_docs/local_site/index.html`.
+
 ## Caching
 
 To speed up development and experimentation, this project uses `joblib` to cache the results of the expensive data preprocessing step. When you re-run the training pipeline with the same data and configuration, the preprocessed data will be loaded from a local cache, saving significant time.
