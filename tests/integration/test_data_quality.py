@@ -844,3 +844,4 @@ class TestDataQualityFramework:
         assert report.quality_metrics.total_rows == 10000
         assert report.quality_metrics.total_columns == 9
 
+

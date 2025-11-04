@@ -46,3 +46,4 @@ def test_stratified_event_split_properties(df, test_size, seed):
         assert abs(original_event_rate - train_event_rate) < 0.2
         assert abs(original_event_rate - test_event_rate) < 0.2
 
+

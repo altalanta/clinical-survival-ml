@@ -954,3 +954,4 @@ class TestMLOpsPipeline:
         assert final_version.approved_at is not None
         assert final_version.deployed_at is not None
 
+
