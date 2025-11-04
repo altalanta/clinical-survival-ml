@@ -669,3 +669,4 @@ class TestDistributedComputing:
         assert recreated_config.timeout_minutes == original_config.timeout_minutes
         assert recreated_config.resource_allocation_strategy == original_config.resource_allocation_strategy
 
+
