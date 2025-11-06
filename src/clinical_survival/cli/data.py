@@ -1,6 +1,12 @@
 from pathlib import Path
 import typer
 from rich.console import Console
+import pandas as pd
+import yaml
+
+from clinical_survival.data.synthetic import simulate_survival
+from clinical_survival.data_quality import DataQualityProfiler, save_data_quality_report
+from clinical_survival.utils import ensure_dir
 
 app = typer.Typer(help="Commands for data generation and quality assurance.")
 console = Console()
@@ -14,8 +20,19 @@ def synthetic_data(
 ) -> None:
     """Generate synthetic clinical datasets for testing."""
     console.print(f"Generating {n_samples} samples for '{scenario}' scenario...")
-    # Placeholder for the actual implementation
-    console.print(f"✅ Synthetic data saved to [bold cyan]{output_dir}[/bold cyan]")
+    
+    ensure_dir(output_dir)
+    df, meta = simulate_survival(n=n_samples, seed=random_state)
+    
+    csv_path = output_dir / f"{scenario}_synthetic_data.csv"
+    meta_path = output_dir / f"{scenario}_metadata.yaml"
+    
+    df.to_csv(csv_path, index=False)
+    with open(meta_path, 'w') as f:
+        yaml.dump(meta, f)
+
+    console.print(f"✅ Synthetic data saved to [bold cyan]{csv_path}[/bold cyan]")
+    console.print(f"✅ Metadata saved to [bold cyan]{meta_path}[/bold cyan]")
 
 @app.command()
 def quality_profile(
@@ -26,5 +43,17 @@ def quality_profile(
 ) -> None:
     """Generate a comprehensive data quality profile report."""
     console.print(f"Profiling data from [bold cyan]{data}[/bold cyan]...")
-    # Placeholder for the actual implementation
-    console.print(f"✅ Data quality report saved to [bold cyan]{output_dir}[/bold cyan]")
+    
+    df = pd.read_csv(data)
+    with open(meta, 'r') as f:
+        metadata = yaml.safe_load(f)
+
+    profiler = DataQualityProfiler()
+    report = profiler.profile_dataset(df, dataset_name=data.stem, clinical_context=metadata)
+    
+    ensure_dir(output_dir)
+    report_path = output_dir / f"{data.stem}_quality_report.{output_format}"
+    save_data_quality_report(report, report_path, format=output_format)
+
+    console.print(f"✅ Data quality report saved to [bold cyan]{report_path}[/bold cyan]")
+
