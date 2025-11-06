@@ -46,32 +46,32 @@ report: ## regenerate HTML report
 .PHONY: test-quality
 test-quality: ## run comprehensive quality assurance tests
 	@echo "🔬 Generating synthetic test data..."
-	poetry run clinical-ml synthetic-data --scenario icu --n-samples 1000 --random-state 42 --output-dir tests/data
+	poetry run clinical-ml data synthetic-data --scenario icu --n-samples 1000 --random-state 42 --output-dir tests/data
 	@echo "🧪 Running performance regression tests..."
-	poetry run clinical-ml performance-regression --config configs/params.yaml --tolerance 0.02 --output-dir tests/performance_regression
+	poetry run clinical-ml testing performance-regression --config configs/params.yaml --tolerance 0.02
 	@echo "🔍 Checking CV integrity..."
-	poetry run clinical-ml cv-integrity --config configs/params.yaml --cv-folds 3 --output-dir tests/cv_integrity
+	poetry run clinical-ml testing cv-integrity --config configs/params.yaml --cv-folds 3
 	@echo "🏆 Running benchmark suite..."
-	poetry run clinical-ml benchmark-suite --config configs/params.yaml --output-dir tests/benchmark_results
+	poetry run clinical-ml testing benchmark --config configs/params.yaml
 	@echo "✅ Quality assurance tests completed!"
 
 .PHONY: test-synthetic
 test-synthetic: ## generate synthetic datasets for testing
-	poetry run clinical-ml synthetic-data --scenario icu --n-samples 500 --random-state 42
-	poetry run clinical-ml synthetic-data --scenario cancer --n-samples 500 --random-state 42
-	poetry run clinical-ml synthetic-data --scenario cardiovascular --n-samples 500 --random-state 42
+	poetry run clinical-ml data synthetic-data --scenario icu --n-samples 500 --random-state 42
+	poetry run clinical-ml data synthetic-data --scenario cancer --n-samples 500 --random-state 42
+	poetry run clinical-ml data synthetic-data --scenario cardiovascular --n-samples 500 --random-state 42
 
 .PHONY: test-regression
 test-regression: ## run performance regression tests
-	poetry run clinical-ml performance-regression --config configs/params.yaml --tolerance 0.05
+	poetry run clinical-ml testing performance-regression --config configs/params.yaml --tolerance 0.05
 
 .PHONY: test-cv-integrity
 test-cv-integrity: ## check cross-validation integrity
-	poetry run clinical-ml cv-integrity --config configs/params.yaml --cv-folds 5
+	poetry run clinical-ml testing cv-integrity --config configs/params.yaml
 
 .PHONY: test-benchmark
 test-benchmark: ## run benchmark suite
-	poetry run clinical-ml benchmark-suite --config configs/params.yaml
+	poetry run clinical-ml testing benchmark --config configs/params.yaml
 
 .PHONY: docs
 docs: ## build sphinx documentation
