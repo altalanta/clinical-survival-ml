@@ -670,3 +670,4 @@ class TestDistributedComputing:
         assert recreated_config.resource_allocation_strategy == original_config.resource_allocation_strategy
 
 
+
