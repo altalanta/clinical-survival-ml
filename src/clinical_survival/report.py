@@ -22,6 +22,7 @@ def generate_report(params_config: ParamsConfig) -> None:
     outdir = ensure_dir(params_config.paths.outdir)
     artifacts_dir = ensure_dir(outdir / "artifacts")
     metrics_dir = ensure_dir(artifacts_dir / "metrics")
+    explain_dir = artifacts_dir / "explainability"
 
     leaderboard_path = metrics_dir / "leaderboard.csv"
     dataset_meta_path = artifacts_dir / "dataset_metadata.json"
@@ -39,6 +40,18 @@ def generate_report(params_config: ParamsConfig) -> None:
             index=False, classes="table table-striped", justify="center"
         )
 
+    # --- Find Explainability Artifacts ---
+    explainability_artifacts = {}
+    if explain_dir.exists():
+        for model_dir in explain_dir.iterdir():
+            if model_dir.is_dir():
+                model_name = model_dir.name
+                summary_plot = model_dir / "shap_summary.png"
+                if summary_plot.exists():
+                    explainability_artifacts[model_name] = {
+                        "summary_plot": str(summary_plot.relative_to(outdir))
+                    }
+
     template_path = Path("configs/report_template.html.j2")
     if not template_path.exists():
         raise FileNotFoundError(f"Report template not found at {template_path}")
@@ -50,6 +63,7 @@ def generate_report(params_config: ParamsConfig) -> None:
         leaderboard_table=leaderboard_html,
         dataset_meta=dataset_meta,
         params=params_config.model_dump(),
+        explainability_artifacts=explainability_artifacts,
     )
 
     report_path = outdir / "report.html"

@@ -14,6 +14,26 @@ This project provides a comprehensive pipeline for clinical survival analysis, i
 - **Explainability**: SHAP- and PDP-based interpretability to understand model predictions.
 - **Automated Reporting**: Generation of a complete, interactive HTML report.
 
+## Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/clinical-survival-ml.git
+    cd clinical-survival-ml
+    ```
+
+2.  **Install dependencies using Poetry:**
+    This project uses [Poetry](https://python-poetry.org/) for dependency management.
+    ```bash
+    poetry install --all-extras
+    ```
+
+3.  **Retrieve the data:**
+    This project uses [DVC](https://dvc.org/) to version control data. After installing the dependencies, pull the data from the default remote:
+    ```bash
+    poetry run dvc pull
+    ```
+
 ## Quickstart
 
 ```bash

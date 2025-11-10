@@ -15,6 +15,7 @@ from clinical_survival.models import make_model
 from clinical_survival.preprocess import build_preprocessor
 from clinical_survival.tracking import MLflowTracker
 from clinical_survival.utils import set_global_seed, prepare_features, combine_survival_target, ensure_dir
+from clinical_survival.explainability.shap_explainer import ShapExplainer
 
 console = Console()
 
@@ -112,6 +113,23 @@ def train_and_evaluate(
                 model_path = models_dir / f"{model_name}.joblib"
                 dump(final_pipeline, model_path)
                 
+                # --- 5. Explainability ---
+                console.print(f"--- Generating SHAP explanations for {model_name} ---")
+                explain_dir = ensure_dir(outdir / "artifacts" / "explainability" / model_name)
+                
+                try:
+                    explainer = ShapExplainer(final_pipeline, X)
+                    
+                    summary_plot_path = explain_dir / "shap_summary.png"
+                    explainer.save_summary_plot(summary_plot_path)
+                    tracker.log_artifact(str(summary_plot_path), artifact_path=f"explainability/{model_name}")
+
+                    dependence_plots_dir = ensure_dir(explain_dir / "dependence_plots")
+                    explainer.save_top_dependence_plots(dependence_plots_dir)
+                    tracker.log_artifacts(str(dependence_plots_dir), artifact_path=f"explainability/{model_name}/dependence_plots")
+                except Exception as e:
+                    console.print(f"[bold red]Failed to generate SHAP explanations for {model_name}: {e}[/bold red]")
+
                 model_info = mlflow.sklearn.log_model(
                     sk_model=final_pipeline,
                     artifact_path=model_name
