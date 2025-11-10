@@ -195,5 +195,26 @@
     {% endfor %}
   </div>
   {% endif %}
-</body>
-</html>
+
+  <!-- Explainability Section -->
+  {% if explainability_artifacts %}
+  <div class="container mt-5">
+      <h2 class="mb-4">Model Explainability (SHAP)</h2>
+      {% for model_name, artifacts in explainability_artifacts.items() %}
+          <div class="card mb-4">
+              <div class="card-header">
+                  <h4>{{ model_name }}</h4>
+              </div>
+              <div class="card-body text-center">
+                  <h5 class="card-title">SHAP Summary Plot</h5>
+                  <p class="card-text">This plot shows the most important features and their impact on the model's prediction.</p>
+                  <img src="{{ artifacts.summary_plot }}" class="img-fluid" alt="SHAP Summary Plot for {{ model_name }}">
+              </div>
+          </div>
+      {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="container mt-5">
+      <h2>Run Configuration</h2>
+      <div class="row">

@@ -52,3 +52,5 @@ def simulate_survival(n: int, seed: int = 42) -> Tuple[pd.DataFrame, dict[str, s
     )
     df["time"] = df["time"].clip(lower=1.0)
     return df, {"seed": seed, "n": n}
+
+
