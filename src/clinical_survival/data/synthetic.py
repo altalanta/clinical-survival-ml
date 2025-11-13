@@ -54,3 +54,4 @@ def simulate_survival(n: int, seed: int = 42) -> Tuple[pd.DataFrame, dict[str, s
     return df, {"seed": seed, "n": n}
 
 
+
