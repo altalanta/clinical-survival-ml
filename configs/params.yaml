@@ -139,3 +139,7 @@ mlflow_tracking:
 caching:
   enabled: true
   dir: "artifacts/cache"
+pipeline:
+  - validator.validate_data
+  - data_loader.load_and_prepare_data
+  - training_loop.run_training_loop
