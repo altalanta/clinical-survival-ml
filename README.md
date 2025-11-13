@@ -100,6 +100,12 @@ This will start the MLflow Tracking UI (by default at `http://127.0.0.1:5000`), 
 
 Trained models are automatically registered in the MLflow Model Registry, providing a central place to manage their lifecycle from development to production. You can use the MLflow UI to transition models between stages (e.g., from `Staging` to `Production`).
 
+## Plugin System for Extensibility
+
+This framework includes a plugin system that allows you to add your own custom models and preprocessors without modifying the core library code. This makes it easy to experiment with new algorithms and components.
+
+For a detailed guide and a working example, please see the [custom model plugin example](./examples/plugins/custom_model/README.md).
+
 ## Contributing
 
 Contributions are welcome! Please see the `CONTRIBUTING.md` file for details.

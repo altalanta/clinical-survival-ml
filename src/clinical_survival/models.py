@@ -356,52 +356,43 @@ class PipelineModel(BaseSurvivalModel):
         return self._estimator.predict_survival_function(transformed, times)
 
 
-def make_model(
-    name: str, *, random_state: Optional[int] = None, use_gpu: bool = True, gpu_id: int = 0, **params: Any
-) -> BaseSurvivalModel:
-    """Factory method returning a survival model wrapper with GPU support."""
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier, BaggingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
-    name = name.lower()
+from clinical_survival.plugins import model_registry
 
-    # Handle ensemble models first, as they use make_model recursively
-    if name == "stacking":
-        if StackingEnsemble is None:
-            raise ImportError("Ensemble methods not available")
-        base_models_param: List[str] = params.pop("base_models", ["coxph", "rsf"])
-        base_models: List[BaseSurvivalModel] = [
-            make_model(model_name, random_state=random_state) for model_name in base_models_param
-        ]
-        return StackingEnsemble(base_models, random_state=random_state, **params)
+BUILTIN_MODELS = {
+    "logistic": LogisticRegression,
+    "svc": SVC,
+    "knn": KNeighborsClassifier,
+    "decision_tree": DecisionTreeClassifier,
+    "naive_bayes": GaussianNB,
+    "random_forest": RandomForestClassifier,
+    "xgboost": XGBClassifier,
+    "stacking": StackingClassifier,
+    "bagging": BaggingClassifier,
+}
 
-    if name == "bagging":
-        if BaggingEnsemble is None:
-            raise ImportError("Ensemble methods not available")
-        base_model_name: str = params.pop("base_model", "rsf")
-        base_model: BaseSurvivalModel = make_model(base_model_name, random_state=random_state)
-        return BaggingEnsemble(base_model, random_state=random_state, **params)
 
-    if name == "dynamic":
-        if DynamicEnsemble is None:
-            raise ImportError("Ensemble methods not available")
-        base_models_param = params.pop("base_models", ["coxph", "rsf", "xgb_cox"])
-        base_models = [
-            make_model(model_name, random_state=random_state) for model_name in base_models_param
-        ]
-        return DynamicEnsemble(base_models, random_state=random_state, **params)
-
-    # Retrieve model from registry for non-ensemble models
-    model_class: type[BaseSurvivalModel] = ModelRegistry.get_model(name)
-
-    # Prepare params for model instantiation
-    model_params: Dict[str, Any] = {**params}
-    if random_state is not None:
-        if name.startswith("xgb"):
-            model_params.setdefault("seed", random_state)
+def make_model(model_name, **kwargs):
+    """
+    Instantiates a model by name, trying the plugin registry first.
+    """
+    try:
+        model_class = model_registry.get(model_name)
+        return model_class(**kwargs)
+    except KeyError:
+        if model_name in BUILTIN_MODELS:
+            model_class = BUILTIN_MODELS[model_name]
+            return model_class(**kwargs)
         else:
-            model_params.setdefault("random_state", random_state)
-
-    # Instantiate the model
-    if name.startswith("xgb"):
-        return model_class(use_gpu=use_gpu, gpu_id=gpu_id, **model_params)
-    else:
-        return model_class(**model_params)
+            raise ValueError(
+                f"Model '{model_name}' not found in built-in models or plugins. "
+                f"Available built-ins: {list(BUILTIN_MODELS.keys())}. "
+                f"Available plugins: {list(model_registry)}."
+            )

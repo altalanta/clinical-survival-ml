@@ -147,6 +147,7 @@ class ParamsConfig(BaseModel):
     mlops: MLOpsConfig
     mlflow_tracking: MLflowTrackingConfig = Field(alias="mlflow_tracking")
     caching: CachingConfig
+    pipeline: List[str]
 
 class FeaturesConfig(BaseModel):
     numeric: List[str]
