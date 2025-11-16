@@ -24,3 +24,4 @@ models:
 ```
 
 When you run the training pipeline, the framework will automatically discover and use your custom model.
+

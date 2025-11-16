@@ -11,3 +11,4 @@ class CustomSVM(SVC):
         defaults = {"kernel": "rbf", "C": 1.5, "gamma": "scale", "probability": True}
         defaults.update(kwargs)
         super().__init__(**defaults)
+
