@@ -106,6 +106,29 @@ This framework includes a plugin system that allows you to add your own custom m
 
 For a detailed guide and a working example, please see the [custom model plugin example](./examples/plugins/custom_model/README.md).
 
+## Counterfactual Explanations for Actionable Insights
+
+Beyond understanding *why* a model makes a certain prediction, this framework can generate counterfactual explanations to show *what* would need to change for a different outcome. Using the `DiCE` library, it can answer "what if" questions for instances predicted to have a high risk, providing actionable insights.
+
+For example, a counterfactual explanation might show the minimal changes in a patient's lab values that would flip their prediction from "high-risk" to "low-risk".
+
+This feature is configurable in `configs/params.yaml` and the results are saved to the `results/artifacts/counterfactuals/` directory.
+
+## Interactive Dashboard for Results Exploration
+
+This project includes an interactive dashboard built with Streamlit to help you explore and understand the results of your analysis. The dashboard provides:
+-   High-level performance overviews.
+-   Detailed, interactive plots for model comparison.
+-   A **Counterfactual Explorer** to investigate "what-if" scenarios for individual patients.
+
+### Launching the Dashboard
+
+To launch the dashboard, run the following command from the root of the project:
+
+```bash
+poetry run clinical-ml dashboard launch
+```
+
 ## Contributing
 
 Contributions are welcome! Please see the `CONTRIBUTING.md` file for details.

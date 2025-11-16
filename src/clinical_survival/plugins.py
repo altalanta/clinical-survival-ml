@@ -45,3 +45,4 @@ class PluginRegistry:
 # Create registries for models and preprocessors
 model_registry = PluginRegistry("clinical_survival.models")
 preprocessor_registry = PluginRegistry("clinical_survival.preprocessors")
+

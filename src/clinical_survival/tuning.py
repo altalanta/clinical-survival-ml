@@ -5,15 +5,23 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, Any, Callable
 
 import numpy as np
 import pandas as pd
 from sksurv.metrics import concordance_index_censored
 from sksurv.util import Surv
+from sklearn.model_selection import KFold
+from rich.console import Console
 
-from clinical_survival.models import BaseSurvivalModel
-from clinical_survival.evaluation.cv import TemporalKFold
+import optuna
+
+from clinical_survival.config import ParamsConfig, FeaturesConfig
+from clinical_survival.models import make_model
+from clinical_survival.preprocess import build_preprocessor
+from sklearn.pipeline import Pipeline
+
+console = Console()
 
 
 @dataclass
@@ -67,111 +75,95 @@ def _extract_preprocessor_summary(estimator: BaseSurvivalModel) -> dict[str, np.
     return summary
 
 
-def nested_cv(
-    model_name: str,
+def _suggest_params(trial: optuna.Trial, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    """Suggests hyperparameters for a trial based on the search space config."""
+    params = {}
+    for name, config in search_space.items():
+        param_type = config.pop("type")
+        if param_type == "categorical":
+            params[name] = trial.suggest_categorical(name, **config)
+        elif param_type == "float":
+            params[name] = trial.suggest_float(name, **config)
+        elif param_type == "int":
+            params[name] = trial.suggest_int(name, **config)
+        else:
+            raise ValueError(f"Unsupported parameter type: {param_type}")
+    return params
+
+
+def _create_objective(
     X: pd.DataFrame,
-    time: pd.Series,
-    event: pd.Series,
-    outer_splits: int,
-    inner_splits: int,
-    param_grid: dict[str, Iterable[Any]],
-    eval_times: Iterable[float],
-    *,
-    random_state: int,
-    group_ids: pd.Series | None = None,
-    pipeline_builder: Callable[[dict[str, Any]], BaseSurvivalModel],
-) -> NestedCVResult:
-    """Perform nested cross-validation returning fold predictions and best estimator."""
+    y_surv: np.ndarray,
+    model_name: str,
+    search_space: Dict[str, Any],
+    params_config: ParamsConfig,
+    features_config: FeaturesConfig,
+) -> Callable[[optuna.Trial], float]:
+    """Creates the objective function for Optuna study."""
 
-    y_struct = _structured_target(time, event)
-    param_candidates = _parameter_grid(param_grid)
+    def objective(trial: optuna.Trial) -> float:
+        """The objective function to be minimized/maximized."""
+        model_params = _suggest_params(trial, search_space)
 
-    group_array = group_ids.to_numpy() if isinstance(group_ids, pd.Series) else None
-    outer_folds = list(TemporalKFold(outer_splits).split(time, groups=group_array))
-    if not outer_folds:
-        raise ValueError("Unable to create temporal folds; consider reducing n_splits")
-
-    folds: list[FoldPrediction] = []
-    best_score = -np.inf
-    best_params_global: dict[str, Any] | None = None
-
-    for fold_idx, (train_index, test_index) in enumerate(outer_folds, start=1):
-        X_train, X_valid = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_valid = y_struct[train_index], y_struct[test_index]
-        event_train = event.iloc[train_index]
-
-        best_inner_score = -np.inf
-        best_params_fold: dict[str, Any] = {}
-
-        inner_groups = group_array[train_index] if group_array is not None else None
-        inner_folds = list(
-            TemporalKFold(inner_splits).split(time.iloc[train_index], groups=inner_groups)
+        scores = []
+        kf = KFold(
+            n_splits=params_config.inner_splits,
+            shuffle=True,
+            random_state=params_config.seed,
         )
-        if not inner_folds:
-            indices = np.arange(len(train_index))
-            midpoint = max(1, len(indices) // 2)
-            inner_folds = [(indices[:midpoint], indices[midpoint:])]
 
-        for params in param_candidates:
-            inner_scores: list[float] = []
-            for inner_train_idx, inner_val_idx in inner_folds:
-                X_inner_train = X_train.iloc[inner_train_idx]
-                X_inner_val = X_train.iloc[inner_val_idx]
-                y_inner_train = y_train[inner_train_idx]
-                y_inner_val = y_train[inner_val_idx]
+        for train_idx, val_idx in kf.split(X):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y_surv[train_idx], y_surv[val_idx]
 
-                estimator = pipeline_builder(params)
-                estimator.fit(X_inner_train, y_inner_train)
-                risk = estimator.predict_risk(X_inner_val)
-                cindex = concordance_index_censored(
-                    y_inner_val["event"],
-                    y_inner_val["time"],
-                    -risk,
-                )[0]
-                inner_scores.append(float(cindex))
-
-            score = float(np.mean(inner_scores)) if inner_scores else -np.inf
-            if score > best_inner_score:
-                best_inner_score = score
-                best_params_fold = dict(params)
-
-        estimator = pipeline_builder(best_params_fold)
-        estimator.fit(X_train, y_train)
-        risk_valid = estimator.predict_risk(X_valid)
-        survival_valid = estimator.predict_survival_function(X_valid, eval_times)
-        fold_cindex = concordance_index_censored(
-            y_valid["event"],
-            y_valid["time"],
-            -risk_valid,
-        )[0]
-
-        summary = _extract_preprocessor_summary(estimator)
-
-        folds.append(
-            FoldPrediction(
-                fold=fold_idx,
-                params=dict(best_params_fold),
-                train_indices=train_index.copy(),
-                test_indices=test_index.copy(),
-                risk=np.asarray(risk_valid, dtype=float),
-                survival=np.asarray(survival_valid, dtype=float),
-                preprocessor_summary=summary,
+            preprocessor = build_preprocessor(
+                features_config.model_dump(),
+                params_config.missing.model_dump(),
+                random_state=params_config.seed,
             )
-        )
+            model = make_model(model_name, random_state=params_config.seed, **model_params)
+            pipeline = Pipeline([("pre", preprocessor), ("est", model)])
 
-        if float(fold_cindex) > best_score:
-            best_score = float(fold_cindex)
-            best_params_global = dict(best_params_fold)
+            pipeline.fit(X_train, y_train)
+            preds = pipeline.predict(X_val)
+            
+            event_indicator = y_val["event"]
+            time_to_event = y_val["time"]
+            
+            score, _, _, _, _ = concordance_index_censored(
+                event_indicator, time_to_event, preds
+            )
+            scores.append(score)
 
-    if best_params_global is None:
-        best_params_global = {}
+        return np.mean(scores)
 
-    final_estimator = pipeline_builder(best_params_global)
-    final_estimator.fit(X, y_struct)
+    return objective
 
-    return NestedCVResult(
-        model_name=model_name,
-        best_params=best_params_global,
-        estimator=final_estimator,
-        folds=folds,
+
+def run_tuning(
+    X: pd.DataFrame,
+    y_surv: np.ndarray,
+    model_name: str,
+    search_space: Dict[str, Any],
+    params_config: ParamsConfig,
+    features_config: FeaturesConfig,
+) -> Dict[str, Any]:
+    """
+    Runs hyperparameter tuning for a given model.
+    """
+    console.print(
+        f"🔎 Starting hyperparameter tuning for [bold cyan]{model_name}[/bold cyan]..."
     )
+
+    study = optuna.create_study(direction=params_config.tuning.direction)
+    objective = _create_objective(
+        X, y_surv, model_name, search_space, params_config, features_config
+    )
+
+    study.optimize(objective, n_trials=params_config.tuning.trials, n_jobs=-1)
+
+    console.print(
+        f"✅ Tuning complete for [bold cyan]{model_name}[/bold cyan]. "
+        f"Best score: {study.best_value:.4f}"
+    )
+    return study.best_params

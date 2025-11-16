@@ -5,8 +5,17 @@ from __future__ import annotations
 import warnings
 from typing import Any, Callable
 
+import json
+from pathlib import Path
+
+import dice_ml
 import numpy as np
 import pandas as pd
+from sklearn.pipeline import Pipeline
+from rich.console import Console
+
+console = Console()
+
 
 try:
     import shap
@@ -725,6 +734,81 @@ class CausalInference:
             importance_scores[feature] = importance
 
         return importance_scores
+
+
+class SurvivalModelWrapper:
+    """Wrapper for a survival model pipeline to make it compatible with DiCE."""
+
+    def __init__(self, pipeline: Pipeline, risk_threshold: float):
+        self.pipeline = pipeline
+        self.risk_threshold = risk_threshold
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Predicts high/low risk class."""
+        risk_scores = self.pipeline.predict(X)
+        return (risk_scores > self.risk_threshold).astype(int)
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Predicts probability of being in the high/low risk classes."""
+        # DiCE requires probabilities for two classes [P(low_risk), P(high_risk)]
+        risk_scores = self.pipeline.predict(X)
+        is_high_risk = (risk_scores > self.risk_threshold).astype(int)
+        
+        # Create a (n_samples, 2) array
+        probs = np.zeros((len(X), 2))
+        probs[:, 1] = is_high_risk  # P(high_risk)
+        probs[:, 0] = 1 - is_high_risk # P(low_risk)
+        return probs
+
+
+def generate_cf_explanations(
+    pipeline: Pipeline,
+    X: pd.DataFrame,
+    y_surv: np.ndarray,
+    features_to_vary: list[str],
+    n_examples: int,
+    sample_size: int,
+    output_path: Path,
+):
+    """
+    Generates and saves counterfactual explanations for high-risk instances.
+    """
+    console.print("🎲 Generating counterfactual explanations...")
+
+    # 1. Prepare data and model for DiCE
+    risk_scores = pipeline.predict(X)
+    risk_threshold = np.median(risk_scores)
+
+    # Add outcome to the dataframe for DiCE
+    df_for_dice = X.copy()
+    outcome_name = "is_high_risk"
+    df_for_dice[outcome_name] = (risk_scores > risk_threshold).astype(int)
+
+    # 2. Initialize DiCE explainer
+    d = dice_ml.Data(dataframe=df_for_dice, continuous_features=list(X.columns), outcome_name=outcome_name)
+    backend_model = SurvivalModelWrapper(pipeline, risk_threshold)
+    m = dice_ml.Model(model=backend_model, backend="sklearn")
+    exp = dice_ml.Dice(d, m, method="random")
+
+    # 3. Select high-risk instances to explain
+    high_risk_indices = np.where(risk_scores > risk_threshold)[0]
+    query_indices = np.random.choice(high_risk_indices, size=min(sample_size, len(high_risk_indices)), replace=False)
+    query_instances = X.iloc[query_indices]
+
+    # 4. Generate counterfactuals
+    counterfactuals = exp.generate_counterfactuals(
+        query_instances,
+        total_CFs=n_examples,
+        desired_class="opposite",
+        features_to_vary=features_to_vary,
+    )
+    
+    # 5. Save the explanations
+    cf_json = json.loads(counterfactuals.to_json())
+    with open(output_path, "w") as f:
+        json.dump(cf_json, f, indent=2)
+
+    console.print(f"✅ Counterfactuals saved to [bold cyan]{output_path}[/bold cyan]")
 
 
 def create_counterfactual_explainer(
