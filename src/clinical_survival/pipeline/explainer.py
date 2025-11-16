@@ -35,3 +35,4 @@ def generate_explanations(
         console.print(
             f"[bold red]Failed to generate SHAP explanations for {model_name}: {e}[/bold red]"
         )
+

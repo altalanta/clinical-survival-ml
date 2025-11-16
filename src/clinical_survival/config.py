@@ -123,13 +123,29 @@ class CachingConfig(BaseModel):
     enabled: bool
     dir: str
 
+
+class TuningConfig(BaseModel):
+    enabled: bool
+    trials: int
+    metric: str
+    direction: str
+
+
+class CounterfactualsConfig(BaseModel):
+    enabled: bool
+    n_examples: int
+    sample_size: int
+    features_to_vary: List[str]
+    output_format: str
+
+
 class ParamsConfig(BaseModel):
     seed: int
     n_splits: int
     inner_splits: int
     test_split: float
-    time_col: str
-    event_col: str
+    time_col: str = Field(alias="time_column")
+    event_col: str = Field(alias="event_column")
     id_col: str
     scoring: ScoringConfig
     calibration: CalibrationConfig
@@ -147,7 +163,12 @@ class ParamsConfig(BaseModel):
     mlops: MLOpsConfig
     mlflow_tracking: MLflowTrackingConfig = Field(alias="mlflow_tracking")
     caching: CachingConfig
+    tuning: TuningConfig
+    counterfactuals: CounterfactualsConfig
     pipeline: List[str]
+
+    class Config:
+        populate_by_name = True
 
 class FeaturesConfig(BaseModel):
     numeric: List[str]

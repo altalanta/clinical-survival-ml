@@ -139,7 +139,26 @@ mlflow_tracking:
 caching:
   enabled: true
   dir: "artifacts/cache"
+
+tuning:
+  enabled: true
+  trials: 100
+  metric: "concordance"
+  direction: "maximize"
+
+counterfactuals:
+  enabled: true
+  n_examples: 5
+  sample_size: 10 # Number of high-risk instances to explain
+  features_to_vary:
+    - "feature_1"
+    - "feature_2"
+    - "feature_3"
+  output_format: "json"
+
 pipeline:
   - validator.validate_data
   - data_loader.load_and_prepare_data
+  - tuner.tune_hyperparameters
   - training_loop.run_training_loop
+  - counterfactual_explainer.generate_all_counterfactuals

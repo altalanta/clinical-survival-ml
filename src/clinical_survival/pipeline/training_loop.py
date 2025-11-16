@@ -17,7 +17,7 @@ def run_training_loop(
     y_surv: pd.DataFrame,
     params_config: ParamsConfig,
     features_config: FeaturesConfig,
-    grid_config: Dict[str, Any],
+    best_params: Dict[str, Any],  # Changed from grid_config
     tracker: MLflowTracker,
     outdir: Path,
     **_kwargs,
@@ -26,6 +26,7 @@ def run_training_loop(
     Runs the training loop for each model specified in the config.
     """
     models_dir = ensure_dir(outdir / "artifacts" / "models")
+    final_pipelines = {}  # To store trained pipelines
 
     for model_name in params_config.models:
         with tracker.start_run(f"train_{model_name}") as nested_run:
@@ -33,7 +34,7 @@ def run_training_loop(
                 continue
 
             console.print(f"--- Training model: {model_name} ---")
-            model_params = grid_config.get(model_name, {})
+            model_params = best_params.get(model_name, {})  # Use best_params
             tracker.log_params(model_params)
 
             # Train
@@ -51,5 +52,8 @@ def run_training_loop(
             # Register
             model_path = models_dir / f"{model_name}.joblib"
             registrar.save_and_register_model(final_pipeline, model_name, model_path, tracker)
+            final_pipelines[model_name] = final_pipeline  # Store the pipeline
 
             console.print(f"✅ Finished training {model_name}.", style="green")
+
+    return {"final_pipelines": final_pipelines}  # Return for the next step
