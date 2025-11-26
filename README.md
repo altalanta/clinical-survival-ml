@@ -14,6 +14,16 @@ This project provides a comprehensive pipeline for clinical survival analysis, i
 - **Explainability**: SHAP- and PDP-based interpretability to understand model predictions.
 - **Automated Reporting**: Generation of a complete, interactive HTML report.
 
+## Key Features
+
+- **End-to-End Survival Pipeline:** From data preprocessing to model evaluation and explainability.
+- **Configurability:** Easily configure all aspects of the pipeline via YAML files, including feature definitions, model parameters, and cross-validation strategy.
+- **Data Quality Gate:** Integrated with Great Expectations to ensure the quality and integrity of input data, preventing errors before they impact the pipeline.
+- **Automated Hyperparameter Tuning:** Leverages Optuna for efficient and effective hyperparameter searches.
+- **Intermediate Caching:** Caches the results of expensive computations (like data preprocessing) to dramatically speed up subsequent runs.
+- **Advanced Explainability:** Generates SHAP explanations to understand model predictions at a global and local level.
+- **Counterfactual Explanations for Actionable Insights:** Uses DiCE to generate "what-if" scenarios.
+
 ## Installation
 
 1.  **Clone the repository:**
@@ -69,15 +79,9 @@ This will also build the Data Docs. You can view them by opening `great_expectat
 
 ## Caching
 
-To speed up development and experimentation, this project uses `joblib` to cache the results of the expensive data preprocessing step. When you re-run the training pipeline with the same data and configuration, the preprocessed data will be loaded from a local cache, saving significant time.
+To accelerate development and experimentation, the pipeline includes a caching mechanism for intermediate artifacts. Expensive, deterministic steps like data preprocessing are cached using `joblib`. On subsequent runs, if the input data and configurations have not changed, the results are loaded from the cache, saving significant computation time.
 
-Caching is enabled by default and can be configured in `configs/params.yaml`:
-
-```yaml
-caching:
-  enabled: true
-  dir: "artifacts/cache"
-```
+Caching can be enabled/disabled and the cache directory can be configured in `configs/params.yaml`.
 
 ## Experiment Tracking with MLflow
 
@@ -113,6 +117,76 @@ Beyond understanding *why* a model makes a certain prediction, this framework ca
 For example, a counterfactual explanation might show the minimal changes in a patient's lab values that would flip their prediction from "high-risk" to "low-risk".
 
 This feature is configurable in `configs/params.yaml` and the results are saved to the `results/artifacts/counterfactuals/` directory.
+
+### Data Validation
+
+The pipeline includes a data quality gate powered by Great Expectations. Before any processing, it validates the raw input data against a defined "Expectation Suite." This ensures that the data adheres to a predefined schema and quality standards. If validation fails, the pipeline halts, preventing corrupted or unexpected data from propagating.
+
+You can enable/disable this feature and configure the expectation suite in `configs/params.yaml`.
+
+## Data and Concept Drift Monitoring
+
+To ensure that deployed models maintain their performance over time, this project includes a service for detecting data and concept drift. This is a critical MLOps practice that helps identify when a model might need to be retrained due to changes in the underlying data distribution.
+
+The service uses the `evidently` library to compare a new batch of data (the "current" data) against a baseline (the "reference" data, typically the training set). It generates a detailed HTML report that visualizes changes in feature distributions (data drift) and the target variable's behavior (concept drift).
+
+### Running a Drift Analysis
+
+To run a drift analysis, use the `monitoring detect-drift` command. You will need to provide the reference dataset, the current dataset you want to analyze, and the feature configuration file.
+
+```bash
+poetry run clinical-ml monitoring detect-drift \
+  --reference-csv data/toy/toy_survival.csv \
+  --current-csv data/toy/toy_survival_new_batch.csv \
+  --features-config configs/features.yaml \
+  --output-path results/monitoring/drift_report.html
+```
+
+After running the command, you can open the generated `drift_report.html` in your browser to explore the results interactively.
+
+## Real-Time Inference API
+
+This project includes a REST API built with FastAPI to serve trained models for real-time inference. This allows other applications to get survival predictions by sending a simple HTTP request.
+
+### Launching the API
+
+To launch the API server, run the following command. By default, it will load the `rsf.joblib` model from the `results/artifacts/models/` directory.
+
+```bash
+poetry run clinical-ml api launch
+```
+
+You can also specify a different model to serve:
+
+```bash
+poetry run clinical-ml api launch --model-path /path/to/your/model.joblib
+```
+
+The server will be available at `http://127.0.0.1:8000`.
+
+### Making a Prediction
+
+You can send a `POST` request to the `/predict` endpoint with the patient's feature data in the request body. Here is an example using `curl`:
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/predict' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "feature_1": 0.5,
+    "feature_2": 1,
+    "feature_3": "A"
+  }'
+```
+
+The API will respond with the predicted risk score:
+
+```json
+{
+  "risk_score": 0.85
+}
+```
 
 ## Interactive Dashboard for Results Exploration
 
