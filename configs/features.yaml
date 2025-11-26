@@ -1,13 +1,37 @@
-numeric:
-  - age
-  - sofa
-  - lactate
-  - creatinine
-  - heart_rate
-categorical:
-  - sex
-  - stage
-  - icu_type
-  - treatment
- drop:
-  - note
+numerical_cols:
+  - "age"
+  - "bmi"
+  - "lab_value_1"
+  - "lab_value_2"
+
+categorical_cols:
+  - "gender"
+  - "ethnicity"
+  - "treatment_group"
+
+binary_cols:
+  - "comorbidity_1"
+  - "comorbidity_2"
+
+time_to_event_col: "time_to_event"
+event_col: "event"
+
+# Declarative Preprocessing Pipeline
+# Defines the sequence of transformations to apply.
+# The `columns` key is optional. If not provided, the component will
+# be applied to its default column type (numerical or categorical).
+preprocessing_pipeline:
+  - component: "SimpleImputer"
+    params:
+      strategy: "median"
+    # Applies to `numerical_cols` by default
+
+  - component: "StandardScaler"
+    params: {}
+    # Applies to `numerical_cols` by default
+
+  - component: "OneHotEncoder"
+    params:
+      handle_unknown: "ignore"
+      sparse_output: false
+    # Applies to `categorical_cols` by default

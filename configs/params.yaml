@@ -136,9 +136,16 @@ mlflow_tracking:
   enabled: true
   experiment_name: "clinical-survival-ml"
   tracking_uri: "file:./mlruns"
+  mlflow_uri: "http://127.0.0.1:5000"
+  log_models: true
+  log_metrics: true
 caching:
   enabled: true
   dir: "artifacts/cache"
+
+data_validation:
+  enabled: true
+  expectation_suite: "clinical_data_suite"
 
 tuning:
   enabled: true
@@ -157,8 +164,9 @@ counterfactuals:
   output_format: "json"
 
 pipeline:
-  - validator.validate_data
-  - data_loader.load_and_prepare_data
-  - tuner.tune_hyperparameters
-  - training_loop.run_training_loop
-  - counterfactual_explainer.generate_all_counterfactuals
+  - "data_loader.load_raw_data"
+  - "data_validator.validate_data"
+  - "preprocessor.prepare_data"
+  - "tuner.tune_hyperparameters"
+  - "training_loop.run_training_loop"
+  - "counterfactual_explainer.generate_all_counterfactuals"
