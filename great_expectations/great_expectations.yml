@@ -1,0 +1,54 @@
+# Welcome to Great Expectations!
+#
+# This configuration file is organized into sections based on the components of
+# Great Expectations.
+config_version: 3.0
+
+# The plugins_directory is a local directory where you can place your own custom
+# plugins.
+plugins_directory: great_expectations/plugins/
+
+# The evaluation_parameter_store_name is the name of the store that will be used
+# to store and retrieve Evaluation Parameters.
+evaluation_parameter_store_name: evaluation_parameter_store
+
+# The expectations_store_name is the name of the store that will be used to
+# store and retrieve Expectations.
+expectations_store_name: expectations_store
+
+# The validations_store_name is the name of the store that will be used to
+# store and retrieve Validation Results.
+validations_store_name: validations_store
+
+# The checkpoint_store_name is the name of the store that will be used to
+
+stores:
+  expectations_store:
+    class_name: ExpectationsStore
+    store_backend:
+      class_name: FilesystemStoreBackend
+      base_directory: great_expectations/expectations/
+
+  validations_store:
+    class_name: ValidationsStore
+    store_backend:
+      class_name: FilesystemStoreBackend
+      base_directory: great_expectations/uncommitted/validations/
+
+  evaluation_parameter_store:
+    class_name: EvaluationParameterStore
+
+anonymous_usage_statistics:
+  enabled: false
+  data_context_id: 12345678-1234-5678-1234-567812345678 # Placeholder UUID
+
+data_docs_sites:
+  local_site:
+    class_name: SiteBuilder
+    store_backend:
+      class_name: FilesystemStoreBackend
+      base_directory: great_expectations/uncommitted/data_docs/local_site/
+    site_index_builder:
+      class_name: DefaultSiteIndexBuilder
+
+
