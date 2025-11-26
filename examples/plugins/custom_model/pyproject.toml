@@ -15,3 +15,7 @@ scikit-learn = "*"
 [tool.poetry.plugins."clinical_survival.models"]
 "custom_svm" = "custom_model.models:CustomSVM"
 
+
+
+
+
