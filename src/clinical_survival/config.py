@@ -114,6 +114,30 @@ class MLOpsConfig(BaseModel):
     triggers: Dict[str, MLOpsTriggerConfig]
     deployment_settings: MLOpsDeploymentSettingsConfig
 
+class ResilienceConfig(BaseModel):
+    """Configuration for resilience patterns (retry, circuit breaker, timeout)."""
+    
+    # Retry settings
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    retry_backoff: float = 2.0
+    retry_max_delay: float = 60.0
+    
+    # Circuit breaker settings
+    circuit_failure_threshold: int = 5
+    circuit_success_threshold: int = 2
+    circuit_recovery_timeout: float = 60.0
+    
+    # Timeout settings
+    default_timeout: float = 300.0  # 5 minutes
+    mlflow_timeout: float = 30.0
+    external_api_timeout: float = 60.0
+    
+    # Graceful degradation
+    enable_fallback: bool = True
+    fallback_dir: str = "artifacts/fallback"
+
+
 class MLflowTrackingConfig(BaseModel):
     enabled: bool
     experiment_name: str
@@ -123,6 +147,17 @@ class CachingConfig(BaseModel):
     enabled: bool
     dir: str
 
+
+class LoggingConfigModel(BaseModel):
+    """Configuration for the logging system."""
+    level: str = "INFO"
+    format: str = "rich"  # "structured" for JSON, "rich" for console, "simple" for basic
+    log_file: Optional[str] = None
+    include_correlation_id: bool = True
+
+class DataValidationConfig(BaseModel):
+    enabled: bool
+    expectation_suite: str
 
 class TuningConfig(BaseModel):
     enabled: bool
@@ -137,6 +172,25 @@ class CounterfactualsConfig(BaseModel):
     sample_size: int
     features_to_vary: List[str]
     output_format: str
+
+
+class PreprocessingStep(BaseModel):
+    """Defines a single step in the preprocessing pipeline."""
+
+    component: str
+    params: Dict[str, Any] = {}
+    columns: Optional[List[str]] = None
+
+
+class FeaturesConfig(BaseModel):
+    """Configuration for features and the preprocessing pipeline."""
+
+    numerical_cols: List[str]
+    categorical_cols: List[str]
+    binary_cols: List[str]
+    time_to_event_col: str
+    event_col: str
+    preprocessing_pipeline: List[PreprocessingStep]
 
 
 class ParamsConfig(BaseModel):
@@ -163,15 +217,13 @@ class ParamsConfig(BaseModel):
     mlops: MLOpsConfig
     mlflow_tracking: MLflowTrackingConfig = Field(alias="mlflow_tracking")
     caching: CachingConfig
+    data_validation: DataValidationConfig
     tuning: TuningConfig
     counterfactuals: CounterfactualsConfig
     pipeline: List[str]
+    logging: LoggingConfigModel = Field(default_factory=LoggingConfigModel)
+    resilience: ResilienceConfig = Field(default_factory=ResilienceConfig)
 
     class Config:
         populate_by_name = True
-
-class FeaturesConfig(BaseModel):
-    numeric: List[str]
-    categorical: List[str]
-    drop: List[str]
 
