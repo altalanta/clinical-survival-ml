@@ -83,6 +83,59 @@ To accelerate development and experimentation, the pipeline includes a caching m
 
 Caching can be enabled/disabled and the cache directory can be configured in `configs/params.yaml`.
 
+## Structured Logging
+
+The pipeline includes a comprehensive, centralized logging system designed for both development and production use. It provides:
+
+-   **Structured JSON logging**: For production environments, logs are output in JSON format, making them easy to ingest into log aggregation systems like ELK stack, Datadog, or CloudWatch.
+-   **Rich console logging**: For development, colorful and readable output with tracebacks.
+-   **Correlation IDs**: Every pipeline run is assigned a unique correlation ID, allowing you to trace all log messages from a single execution.
+-   **Pipeline step tracking**: Each step of the pipeline is logged with timing information, making it easy to identify bottlenecks.
+
+### Configuration
+
+Logging is configured in `configs/params.yaml`:
+
+```yaml
+logging:
+  level: "INFO"           # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "rich"          # "rich" (console), "structured" (JSON), "simple"
+  log_file: null          # Optional: path to write logs to a file
+  include_correlation_id: true
+```
+
+### CLI Options
+
+You can also override logging settings via CLI flags:
+
+```bash
+# Enable verbose (DEBUG) logging
+poetry run clinical-ml --verbose training run
+
+# Use structured JSON logging (useful for production/CI)
+poetry run clinical-ml --log-format structured training run
+
+# Write logs to a file
+poetry run clinical-ml --log-file results/logs/run.log training run
+```
+
+### Using the Logger in Custom Code
+
+If you're extending the pipeline, you can use the centralized logger:
+
+```python
+from clinical_survival.logging_config import get_logger, LogContext
+
+logger = get_logger(__name__)
+
+# Basic logging with extra context
+logger.info("Training started", extra={"n_samples": 1000, "model": "coxph"})
+
+# Use LogContext to add context to all logs within a block
+with LogContext(run_id="abc123", fold=1):
+    logger.info("Processing fold")  # Will include run_id and fold
+```
+
 ## Experiment Tracking with MLflow
 
 This project is integrated with [MLflow](https://mlflow.org/) for comprehensive experiment tracking and model management. All training runs are automatically logged, allowing you to track parameters, metrics, and artifacts, as well as version and manage your models.
@@ -201,6 +254,364 @@ To launch the dashboard, run the following command from the root of the project:
 
 ```bash
 poetry run clinical-ml dashboard launch
+```
+
+## Type Safety and Runtime Validation
+
+This project uses comprehensive type hints and runtime validation to catch errors early and improve code maintainability.
+
+### Type Hints
+
+All public functions and methods include type hints. The project uses:
+
+-   **Protocol classes**: Define interfaces for models, preprocessors, and pipeline steps
+-   **Type aliases**: Common types like `FeatureMatrix`, `SurvivalArray`, `RiskScores`
+-   **Pydantic models**: Configuration validation with automatic type coercion
+
+### Runtime Validation
+
+The `types` module provides decorators for runtime type checking:
+
+```python
+from clinical_survival.types import validate_input, validate_output, validate_dataframe_columns
+
+@validate_input("X", pd.DataFrame)
+@validate_dataframe_columns("X", ["age", "bmi"])
+@validate_output(np.ndarray)
+def predict(X: pd.DataFrame) -> np.ndarray:
+    ...
+```
+
+### Pipeline Step Schemas
+
+Pipeline steps can define input/output schemas for automatic validation:
+
+```python
+from clinical_survival.types import StepInputSchema, StepOutputSchema, validate_step_io
+
+class LoadDataOutput(StepOutputSchema):
+    raw_df: pd.DataFrame
+
+@validate_step_io(output_schema=LoadDataOutput)
+def load_raw_data(**context) -> dict:
+    ...
+```
+
+### Running Type Checks
+
+```bash
+# Run mypy for static type checking
+poetry run mypy src/clinical_survival/
+
+# The project uses strict mode with Pydantic plugin
+```
+
+## Unified Error Handling
+
+The pipeline includes a comprehensive error handling system that provides:
+
+-   **User-friendly error messages**: Clear explanations of what went wrong
+-   **Actionable suggestions**: Hints on how to fix common problems
+-   **Structured error context**: Detailed information for debugging
+-   **Consistent error hierarchy**: Well-organized exception types
+
+### Error Categories
+
+The pipeline uses a hierarchy of custom exceptions:
+
+```
+ClinicalSurvivalError (base)
+├── ConfigurationError - Invalid or missing configuration
+├── DataError - Data loading, validation, or processing issues
+│   ├── DataLoadError - Failed to load data from source
+│   ├── DataValidationError - Data failed quality checks
+│   └── MissingColumnError - Required column not found
+├── ModelError - Model training or inference issues
+│   ├── ModelNotFittedError - Model used before fitting
+│   ├── ModelTrainingError - Training failed
+│   └── ModelInferenceError - Prediction failed
+├── PipelineError - Pipeline orchestration issues
+│   ├── StepNotFoundError - Pipeline step not found
+│   └── StepExecutionError - Pipeline step failed
+└── ReportError - Report generation issues
+```
+
+### User-Friendly CLI Output
+
+When errors occur, the CLI displays helpful panels with:
+
+```
+❌ Pipeline Error
+────────────────────────────────────────
+DataLoadError
+Data file not found: data/missing.csv
+
+Context:
+  • path: data/missing.csv
+
+Suggestions:
+  → Verify the file path is correct and the file exists
+  → Check file permissions
+  → If using DVC, run 'dvc pull' to fetch the data
+────────────────────────────────────────
+Run with --verbose flag for full traceback
+```
+
+### Error Handling Decorators
+
+The `error_handling` module provides decorators for common patterns:
+
+```python
+from clinical_survival.error_handling import (
+    handle_errors,
+    wrap_step_errors,
+    require_fitted,
+    retry_on_error,
+)
+
+# Wrap pipeline steps with automatic error context
+@wrap_step_errors("data_loading")
+def load_raw_data(**context):
+    ...
+
+# Retry transient failures with exponential backoff
+@retry_on_error(max_attempts=3, exceptions=(ConnectionError,))
+def fetch_external_data(url):
+    ...
+
+# Ensure model is fitted before prediction
+class MyModel:
+    @require_fitted()
+    def predict(self, X):
+        return self.model.predict(X)
+```
+
+## Resilience Patterns for External Services
+
+The pipeline includes comprehensive resilience patterns to handle failures in external services (MLflow, Dask, external APIs) gracefully.
+
+### Retry with Exponential Backoff
+
+Automatically retry transient failures with increasing delays:
+
+```python
+from clinical_survival.resilience import retry_with_backoff
+
+@retry_with_backoff(
+    max_attempts=3,
+    initial_delay=1.0,
+    backoff_factor=2.0,
+    exceptions=(ConnectionError, TimeoutError),
+)
+def call_external_service():
+    return requests.get(url).json()
+```
+
+### Circuit Breaker Pattern
+
+Prevent cascading failures by "opening" the circuit after repeated failures:
+
+```python
+from clinical_survival.resilience import circuit_breaker, CircuitBreaker
+
+@circuit_breaker(
+    name="external_api",
+    failure_threshold=5,
+    recovery_timeout=60,
+    fallback=lambda: {"status": "unavailable"},
+)
+def call_external_api():
+    return api.fetch_data()
+
+# Check circuit state
+breaker = CircuitBreaker.get("external_api")
+print(f"Circuit state: {breaker.state}")  # CLOSED, OPEN, or HALF_OPEN
+```
+
+### Graceful Degradation
+
+Continue operation with reduced functionality when services are unavailable:
+
+```python
+from clinical_survival.resilience import graceful_degradation
+
+@graceful_degradation(default=None)
+def log_to_monitoring_service(data):
+    monitoring_api.log(data)  # Won't raise even if service is down
+```
+
+### MLflow Tracking with Resilience
+
+The MLflow tracker automatically handles failures:
+
+```python
+from clinical_survival.tracking import MLflowTracker
+
+tracker = MLflowTracker(config)
+
+# This won't fail even if MLflow is unavailable
+with tracker.start_run("training"):
+    tracker.log_params({"lr": 0.01})  # Falls back to local storage
+    tracker.log_metrics({"accuracy": 0.95})
+
+# Check if tracker is degraded
+if tracker.is_degraded:
+    print("MLflow unavailable, using local fallback")
+```
+
+### Configuration
+
+Resilience settings are configured in `configs/params.yaml`:
+
+```yaml
+resilience:
+  # Retry settings
+  max_retries: 3
+  retry_delay: 1.0
+  retry_backoff: 2.0
+  
+  # Circuit breaker
+  circuit_failure_threshold: 5
+  circuit_recovery_timeout: 60.0
+  
+  # Timeouts
+  mlflow_timeout: 30.0
+  external_api_timeout: 60.0
+  
+  # Fallback
+  enable_fallback: true
+  fallback_dir: "artifacts/fallback"
+```
+
+### Combined Resilience Decorator
+
+For maximum protection, use the combined decorator:
+
+```python
+from clinical_survival.resilience import resilient
+
+@resilient(
+    max_retries=3,
+    circuit_name="api",
+    timeout_seconds=30,
+    fallback=lambda: {"error": "service unavailable"},
+)
+def call_critical_service():
+    return api.call()
+```
+
+## Pipeline Step Schema Validation
+
+The pipeline includes comprehensive input/output schema validation for each step, ensuring data flows correctly between steps and catching configuration errors early.
+
+### How It Works
+
+Each pipeline step has defined schemas for its expected inputs and outputs:
+
+```
+data_loader.load_raw_data
+  Input:  params_config (ParamsConfig)
+  Output: raw_df (DataFrame)
+     ↓
+preprocessor.prepare_data
+  Input:  raw_df (DataFrame), params_config, features_config
+  Output: X_train, X_test, y_train, y_test, preprocessor
+     ↓
+tuner.tune_hyperparameters
+  Input:  X_train, y_train, params_config, features_config, grid_config
+  Output: best_params (Dict)
+     ↓
+training_loop.run_training_loop
+  Input:  X_train, y_train, best_params, tracker, outdir, ...
+  Output: final_pipelines (Dict)
+```
+
+### User-Friendly Error Messages
+
+When validation fails, you get helpful error messages:
+
+```
+❌ Input Validation Error
+────────────────────────────────────────────────────────
+Schema validation failed for input of step 'prepare_data'
+
+┌─────────────┬─────────────────────────────────┬───────────┐
+│ Field       │ Error                           │ Input     │
+├─────────────┼─────────────────────────────────┼───────────┤
+│ raw_df      │ raw_df must be a DataFrame      │ None      │
+│ params_con… │ Field required                  │           │
+└─────────────┴─────────────────────────────────┴───────────┘
+
+Suggestions:
+  → Check that previous pipeline steps completed successfully
+  → Verify the step is receiving all required inputs
+  → Review the schema definition in pipeline/schemas.py
+────────────────────────────────────────────────────────
+```
+
+### Defining Custom Step Schemas
+
+To add validation to a new pipeline step:
+
+```python
+from clinical_survival.pipeline.schemas import (
+    PipelineStepInput,
+    PipelineStepOutput,
+    validate_pipeline_step,
+)
+from pydantic import Field, field_validator
+
+class MyStepInput(PipelineStepInput):
+    """Input schema for my custom step."""
+    
+    data: Any = Field(..., description="Input data")
+    threshold: float = Field(0.5, description="Processing threshold")
+    
+    @field_validator("threshold")
+    @classmethod
+    def validate_threshold(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError("threshold must be between 0 and 1")
+        return v
+
+class MyStepOutput(PipelineStepOutput):
+    """Output schema for my custom step."""
+    
+    processed_data: Any = Field(..., description="Processed output")
+    metrics: Dict[str, float] = Field(..., description="Processing metrics")
+
+@validate_pipeline_step(
+    input_schema=MyStepInput,
+    output_schema=MyStepOutput,
+)
+def my_custom_step(data, threshold=0.5, **context):
+    # Process data...
+    return {
+        "processed_data": result,
+        "metrics": {"accuracy": 0.95},
+    }
+```
+
+### Listing Validated Steps
+
+To see which steps have schema validation:
+
+```python
+from clinical_survival.pipeline.schemas import list_validated_steps
+
+print(list_validated_steps())
+# ['data_loader.load_raw_data', 'preprocessor.prepare_data', ...]
+```
+
+### Generating Schema Documentation
+
+Auto-generate markdown documentation for all schemas:
+
+```python
+from clinical_survival.pipeline.schemas import generate_schema_docs
+
+docs = generate_schema_docs()
+print(docs)  # Markdown table of all step schemas
 ```
 
 ## Contributing
