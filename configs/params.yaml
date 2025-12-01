@@ -143,6 +143,39 @@ caching:
   enabled: true
   dir: "artifacts/cache"
 
+# Logging configuration
+# - level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+# - format: "rich" (colored console), "structured" (JSON), "simple" (basic text)
+# - log_file: Optional path to write logs to a file
+logging:
+  level: "INFO"
+  format: "rich"
+  log_file: null  # Set to "results/logs/pipeline.log" for file logging
+  include_correlation_id: true
+
+# Resilience configuration for external services
+# Controls retry, circuit breaker, and timeout behavior
+resilience:
+  # Retry settings
+  max_retries: 3
+  retry_delay: 1.0  # Initial delay in seconds
+  retry_backoff: 2.0  # Multiplier for each retry
+  retry_max_delay: 60.0  # Maximum delay between retries
+  
+  # Circuit breaker settings
+  circuit_failure_threshold: 5  # Failures before opening circuit
+  circuit_success_threshold: 2  # Successes to close circuit
+  circuit_recovery_timeout: 60.0  # Seconds before trying again
+  
+  # Timeout settings (in seconds)
+  default_timeout: 300.0  # 5 minutes
+  mlflow_timeout: 30.0
+  external_api_timeout: 60.0
+  
+  # Graceful degradation
+  enable_fallback: true
+  fallback_dir: "artifacts/fallback"
+
 data_validation:
   enabled: true
   expectation_suite: "clinical_data_suite"
