@@ -18,3 +18,7 @@ def save_and_register_model(
     model_info = mlflow.sklearn.log_model(sk_model=pipeline, artifact_path=model_name)
     tracker.register_model(model_info.model_uri, model_name)
 
+
+
+
+

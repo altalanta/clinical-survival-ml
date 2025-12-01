@@ -43,3 +43,7 @@ def launch(
     except subprocess.CalledProcessError as e:
         console.print(f"[bold red]Error launching dashboard: {e}[/bold red]")
         raise typer.Exit(1)
+
+
+
+
