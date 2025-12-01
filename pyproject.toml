@@ -66,7 +66,7 @@ automl = [
 ]
 
 [tool.poetry.scripts]
-clinical-ml = "clinical_survival.cli.main:app"
+clinical-ml = "clinical_survival.cli.main:main_with_error_handling"
 
 [tool.poetry.plugins."clinical_survival.models"]
 "coxph" = "clinical_survival.models:CoxPHModel"
@@ -104,3 +104,11 @@ show_error_codes = true
 strict = true
 ignore_missing_imports = true
 exclude = ["notebooks/", "tests/"]
+plugins = ["pydantic.mypy"]
+
+# Pydantic mypy plugin settings
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
