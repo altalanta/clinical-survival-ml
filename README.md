@@ -614,6 +614,354 @@ docs = generate_schema_docs()
 print(docs)  # Markdown table of all step schemas
 ```
 
+## Pipeline Performance Profiling
+
+The pipeline includes built-in performance profiling to track execution time and memory usage for each step.
+
+### Automatic Profiling
+
+Every pipeline run automatically generates a performance profile saved to `artifacts/pipeline_profile.json`:
+
+```json
+{
+  "pipeline_name": "training_pipeline",
+  "total_duration_seconds": 45.23,
+  "peak_memory_mb": 512.4,
+  "steps": [
+    {"name": "data_loader.load_raw_data", "duration_seconds": 1.2, "memory_peak_mb": 128.5},
+    {"name": "preprocessor.prepare_data", "duration_seconds": 3.4, "memory_peak_mb": 256.2},
+    ...
+  ]
+}
+```
+
+### Using the Profiler Directly
+
+```python
+from clinical_survival.profiling import PipelineProfiler, profile_function, timed
+
+# Profile a complete workflow
+profiler = PipelineProfiler("my_workflow", track_memory=True)
+
+with profiler.profile_step("load_data"):
+    df = load_data(path)
+
+with profiler.profile_step("train_model"):
+    model = train(df)
+
+profile = profiler.finish()
+profiler.print_summary()  # Rich console output
+profiler.save_report("profile.json")
+
+# Simple function timing decorator
+@timed
+def my_function():
+    ...
+
+# Full function profiling with memory
+@profile_function(track_memory=True)
+def expensive_computation(data):
+    ...
+```
+
+### Profile Summary Output
+
+```
+Pipeline Profile: training_pipeline
+Correlation ID: abc123
+Status: ✅ Success
+
+┌─────────────────┬──────────┐
+│ Metric          │ Value    │
+├─────────────────┼──────────┤
+│ Total Duration  │ 45.23s   │
+│ Peak Memory     │ 512.4 MB │
+│ Steps Executed  │ 5        │
+└─────────────────┴──────────┘
+
+┌──────────────────────────────┬──────────┬──────────┬─────────────┬────────┐
+│ Step                         │ Duration │ % Total  │ Memory Peak │ Status │
+├──────────────────────────────┼──────────┼──────────┼─────────────┼────────┤
+│ data_loader.load_raw_data    │ 1.20s    │ 2.7%     │ 128.5 MB    │ ✅     │
+│ preprocessor.prepare_data    │ 3.40s    │ 7.5%     │ 256.2 MB    │ ✅     │
+│ tuner.tune_hyperparameters   │ 25.10s   │ 55.5%    │ 384.1 MB    │ ✅     │
+│ training_loop.run_training   │ 15.53s   │ 34.3%    │ 512.4 MB    │ ✅     │
+└──────────────────────────────┴──────────┴──────────┴─────────────┴────────┘
+```
+
+## API Health Checks and Metrics
+
+The inference API includes comprehensive health check and metrics endpoints for production deployments.
+
+### Endpoints
+
+| Endpoint | Purpose | Response |
+|----------|---------|----------|
+| `GET /health` | Basic liveness probe | `{"status": "healthy", "uptime_seconds": 123.4}` |
+| `GET /ready` | Readiness probe (model loaded?) | `{"ready": true, "model_loaded": true}` |
+| `GET /metrics` | Prometheus-compatible metrics | JSON or text format |
+| `POST /predict` | Single prediction | `{"risk_score": 0.75}` |
+| `POST /predict/batch` | Batch predictions (up to 1000) | `[{"risk_score": 0.75}, ...]` |
+
+### Kubernetes Integration
+
+```yaml
+# Kubernetes deployment with probes
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: clinical-api
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+```
+
+### Prometheus Metrics
+
+Request metrics in Prometheus format:
+
+```bash
+curl http://localhost:8000/metrics?format=prometheus
+```
+
+```
+# HELP clinical_survival_requests_total Total number of requests
+# TYPE clinical_survival_requests_total counter
+clinical_survival_requests_total 1523
+
+# HELP clinical_survival_predictions_total Total number of predictions
+# TYPE clinical_survival_predictions_total counter
+clinical_survival_predictions_total 1200
+
+# HELP clinical_survival_errors_total Total number of errors
+# TYPE clinical_survival_errors_total counter
+clinical_survival_errors_total 12
+
+# HELP clinical_survival_request_latency_ms Average request latency
+# TYPE clinical_survival_request_latency_ms gauge
+clinical_survival_request_latency_ms 45.23
+```
+
+## Pre-flight Health Checks
+
+The pipeline includes comprehensive health checks that run before execution to validate your environment:
+
+```python
+from clinical_survival.diagnostics import run_health_checks
+
+# Run health checks
+results = run_health_checks(params_config)
+
+if not results.all_passed:
+    print("Health checks failed!")
+    for check in results.failed_checks:
+        print(f"  ✗ {check.name}: {check.message}")
+        if check.suggestion:
+            print(f"    → {check.suggestion}")
+```
+
+### What Gets Checked
+
+| Check | Description |
+|-------|-------------|
+| Python Version | Ensures Python >= 3.10 |
+| Core Dependencies | Validates numpy, pandas, sklearn, sksurv |
+| Optional Dependencies | Checks for xgboost, mlflow, shap, etc. |
+| GPU Availability | Detects CUDA and XGBoost GPU support |
+| System Memory | Warns if < 2GB available |
+| Disk Space | Warns if < 1GB free |
+| Data File | Validates data file exists and is readable |
+| Output Directory | Confirms write permissions |
+| MLflow Connection | Tests tracking server if configured |
+
+### Sample Output
+
+```
+🏥 Health Check Results
+┌────────┬─────────────────────┬──────────────────────────────────┐
+│ Status │ Check               │ Result                           │
+├────────┼─────────────────────┼──────────────────────────────────┤
+│   ✓    │ Python Version      │ Python 3.11.5                    │
+│   ✓    │ Core Dependencies   │ 7 core packages installed        │
+│   ⚠    │ Optional Dep.       │ Some optional features unavail.  │
+│   ⚠    │ GPU Availability    │ No GPU detected, using CPU only  │
+│   ✓    │ System Memory       │ 12.4GB available of 16.0GB       │
+│   ✓    │ Data File           │ Found data.csv (2.5MB, 15 cols)  │
+└────────┴─────────────────────┴──────────────────────────────────┘
+```
+
+## Configuration Validation
+
+Beyond schema validation, the pipeline performs semantic validation to catch configuration issues early:
+
+```python
+from clinical_survival.config_validation import validate_configuration
+
+result = validate_configuration(
+    params_config,
+    features_config, 
+    grid_config,
+    data_df=df  # Optional: enables data-aware validation
+)
+
+if result.has_errors:
+    print("Configuration errors found:")
+    print(result.summary())
+```
+
+### Validation Categories
+
+- **Feature References**: Ensures columns referenced in config exist in data
+- **Model Availability**: Validates model names and dependencies
+- **Grid Config**: Checks hyperparameter ranges are sensible
+- **Pipeline Steps**: Verifies step order and dependencies
+- **Path Validation**: Confirms files and directories exist
+- **Data Quality**: Checks sample size, event rate, missing data
+
+## Model Comparison and Selection
+
+The pipeline automatically compares trained models and selects the best:
+
+```python
+from clinical_survival.model_selection import ModelComparator, SelectionCriterion
+
+# Compare models
+comparator = ModelComparator(
+    metrics={
+        "coxph": {"concordance": 0.72, "ibs": 0.18},
+        "rsf": {"concordance": 0.75, "ibs": 0.16},
+        "xgb_cox": {"concordance": 0.77, "ibs": 0.15},
+    },
+    cv_results={
+        "coxph": [0.70, 0.73, 0.71, 0.74, 0.72],
+        "rsf": [0.74, 0.76, 0.73, 0.77, 0.75],
+        "xgb_cox": [0.75, 0.78, 0.76, 0.79, 0.77],
+    },
+)
+
+# Get comparison results
+comparison = comparator.compare(primary_metric="concordance")
+comparator.print_comparison()
+
+# Select best model
+best = comparator.select_best(SelectionCriterion.BEST_METRIC)
+print(f"Best model: {best.selected_model}")
+```
+
+### Selection Criteria
+
+| Criterion | Description |
+|-----------|-------------|
+| `BEST_METRIC` | Highest primary metric score |
+| `BEST_AVERAGE` | Best normalized average across all metrics |
+| `MOST_STABLE` | Lowest cross-validation variance |
+| `PARETO_OPTIMAL` | Best trade-off between performance and stability |
+| `ENSEMBLE_TOP_K` | Recommend ensemble of top K models |
+
+### Comparison Table Output
+
+```
+🏆 Model Comparison
+┌──────┬─────────┬────────────┬────────┬───────────┐
+│ Rank │ Model   │ Concordance│ CV Std │ Stability │
+├──────┼─────────┼────────────┼────────┼───────────┤
+│  🥇  │ xgb_cox │    0.7700  │ 0.0158 │   0.984   │
+│  🥈  │ rsf     │    0.7500  │ 0.0158 │   0.984   │
+│  3   │ coxph   │    0.7200  │ 0.0158 │   0.984   │
+└──────┴─────────┴────────────┴────────┴───────────┘
+```
+
+## Artifact Manifest System
+
+Every pipeline run generates a comprehensive manifest for reproducibility:
+
+```python
+from clinical_survival.artifact_manifest import ManifestManager
+
+# Create manifest manager
+manager = ManifestManager(Path("results"), run_name="experiment_v1")
+
+# Start run (captures environment, git info, etc.)
+manager.start_run(params_config, features_config, grid_config)
+
+# Add artifacts during execution
+manager.add_artifact("model", model_path, category="models")
+manager.add_metric("concordance", 0.75, model="coxph")
+manager.add_step_duration("training_loop", 45.2)
+
+# Finalize and save
+manifest = manager.finalize(success=True)
+manifest_path = manager.save()
+```
+
+### Manifest Contents
+
+The manifest JSON includes:
+
+```json
+{
+  "manifest_version": "1.0",
+  "run_id": "20231203_143052_a1b2c3d4",
+  "run_name": "experiment_v1",
+  "created_at": "2023-12-03T14:30:52.123Z",
+  "completed_at": "2023-12-03T14:45:23.456Z",
+  "duration_seconds": 871.333,
+  "status": "completed",
+  "correlation_id": "abc123",
+  "configuration": {
+    "params": { "seed": 42, "n_splits": 5, ... },
+    "features": { "numerical_cols": [...], ... },
+    "grid": { "coxph": { "alpha": 0.1 }, ... }
+  },
+  "environment": {
+    "python_version": "3.11.5",
+    "git_commit": "abc123def",
+    "git_branch": "main",
+    "git_dirty": false,
+    "package_versions": { "numpy": "1.24.0", ... }
+  },
+  "artifacts": [
+    {
+      "name": "coxph_model",
+      "path": "results/artifacts/models/coxph.joblib",
+      "category": "models",
+      "checksum": "sha256:abc123...",
+      "size_bytes": 102400
+    }
+  ],
+  "metrics": {
+    "coxph": { "concordance": 0.75, "ibs": 0.18 }
+  },
+  "best_model": {
+    "name": "xgb_cox",
+    "metrics": { "concordance": 0.77 }
+  }
+}
+```
+
+### Loading Previous Manifests
+
+```python
+# Load a previous manifest
+manifest = ManifestManager.load("results/artifacts/manifests/manifest_20231203.json")
+
+print(f"Run ID: {manifest.run_id}")
+print(f"Best model: {manifest.best_model}")
+print(f"Duration: {manifest.duration_seconds:.1f}s")
+```
+
 ## Contributing
 
 Contributions are welcome! Please see the `CONTRIBUTING.md` file for details.
