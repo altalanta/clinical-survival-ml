@@ -1,19 +1,30 @@
 """
-Pipeline orchestrator with structured logging and error handling.
+Pipeline orchestrator with structured logging, error handling, and profiling.
 
 This module orchestrates the execution of the modular training pipeline,
-using the centralized logging system and unified error handling for
-consistent, traceable, and user-friendly output.
+using the centralized logging system, unified error handling, and
+performance profiling for consistent, traceable, and user-friendly output.
+
+Key features:
+- Pre-flight health checks and diagnostics
+- Semantic configuration validation
+- Artifact manifest generation for reproducibility
+- Model comparison and selection
+- Performance profiling
 """
 
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from joblib import Memory
 
+from clinical_survival.artifact_manifest import ManifestManager
 from clinical_survival.config import ParamsConfig, FeaturesConfig
+from clinical_survival.config_validation import validate_configuration
+from clinical_survival.diagnostics import run_health_checks
 from clinical_survival.error_handling import wrap_step_errors
 from clinical_survival.errors import (
     ClinicalSurvivalError,
@@ -28,6 +39,8 @@ from clinical_survival.logging_config import (
     PipelineLogger,
     set_correlation_id,
 )
+from clinical_survival.model_selection import ModelComparator
+from clinical_survival.profiling import PipelineProfiler
 from clinical_survival.tracking import MLflowTracker
 from clinical_survival.utils import set_global_seed, ensure_dir
 
@@ -96,15 +109,17 @@ def _execute_step(
     func: callable,
     context: Dict[str, Any],
     pipeline_logger: PipelineLogger,
+    profiler: Optional[PipelineProfiler] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Execute a single pipeline step with error handling.
+    Execute a single pipeline step with error handling and profiling.
     
     Args:
         step: Step identifier
         func: Step function to execute
         context: Pipeline context dictionary
         pipeline_logger: Logger for step tracking
+        profiler: Optional profiler for performance tracking
         
     Returns:
         Step output dictionary, or None
@@ -113,48 +128,58 @@ def _execute_step(
         StepExecutionError: If the step fails
     """
     with pipeline_logger.step(step):
-        try:
-            result = func(**context)
-            
-            if result:
-                logger.debug(
-                    f"Step '{step}' completed successfully",
-                    extra={"output_keys": list(result.keys())},
-                )
-            
-            return result
-            
-        except ClinicalSurvivalError:
-            # Re-raise our custom exceptions as-is
-            raise
-        except Exception as e:
-            # Wrap other exceptions with context
-            raise StepExecutionError(
-                message=f"Step '{step}' failed: {e}",
-                step_name=step,
-                original_error=e,
-            ) from e
+        # Use profiler if available, otherwise just execute
+        profile_context = profiler.profile_step(step) if profiler else _null_context()
+        
+        with profile_context:
+            try:
+                result = func(**context)
+                
+                if result:
+                    logger.debug(
+                        f"Step '{step}' completed successfully",
+                        extra={"output_keys": list(result.keys())},
+                    )
+                
+                return result
+                
+            except ClinicalSurvivalError:
+                # Re-raise our custom exceptions as-is
+                raise
+            except Exception as e:
+                # Wrap other exceptions with context
+                raise StepExecutionError(
+                    message=f"Step '{step}' failed: {e}",
+                    step_name=step,
+                    original_error=e,
+                ) from e
 
 
 def run_pipeline(
     params_config: ParamsConfig,
     features_config: FeaturesConfig,
     grid_config: Dict[str, Any],
+    skip_health_checks: bool = False,
+    skip_validation: bool = False,
 ) -> Dict[str, Any]:
     """
     Orchestrates the execution of the modular training pipeline.
     
     This function:
-    1. Initializes the logging system with configuration from params
-    2. Sets up MLflow tracking
-    3. Executes each pipeline step in sequence with error handling
-    4. Logs detailed timing and status information for each step
-    5. Provides user-friendly error messages on failure
+    1. Runs pre-flight health checks and diagnostics
+    2. Validates configuration semantically
+    3. Initializes the logging system and manifest manager
+    4. Sets up MLflow tracking
+    5. Executes each pipeline step in sequence with error handling
+    6. Compares models and selects the best
+    7. Generates artifact manifest for reproducibility
     
     Args:
         params_config: Main parameters configuration
         features_config: Feature engineering configuration
         grid_config: Model hyperparameter grid configuration
+        skip_health_checks: Skip pre-flight health checks
+        skip_validation: Skip configuration validation
         
     Returns:
         Final pipeline context dictionary
@@ -196,9 +221,60 @@ def run_pipeline(
             "steps": params_config.pipeline,
         },
     )
+    
+    # 2. Run pre-flight health checks
+    if not skip_health_checks:
+        logger.info("Running pre-flight health checks...")
+        health_result = run_health_checks(params_config, verbose=True)
+        
+        if not health_result.all_passed:
+            raise ConfigurationError(
+                "Health checks failed. Fix issues before running pipeline.",
+                config_file="environment",
+                key="health_checks",
+            )
+        
+        if health_result.has_warnings:
+            logger.warning(
+                "Health checks passed with warnings",
+                extra={"warnings": len(health_result.warning_checks)},
+            )
+    
+    # 3. Validate configuration semantically
+    if not skip_validation:
+        logger.info("Validating configuration...")
+        validation_result = validate_configuration(
+            params_config, features_config, grid_config
+        )
+        
+        if validation_result.has_errors:
+            logger.error(
+                "Configuration validation failed",
+                extra={"errors": len(validation_result.errors)},
+            )
+            raise ConfigurationError(
+                f"Configuration validation failed:\n{validation_result.summary()}",
+                config_file="params.yaml",
+            )
+        
+        if validation_result.has_warnings:
+            logger.warning(
+                "Configuration has warnings",
+                extra={"warnings": len(validation_result.warnings)},
+            )
 
-    # 2. Setup
+    # 4. Setup
     set_global_seed(params_config.seed)
+    outdir = ensure_dir(params_config.paths.outdir)
+    
+    # Initialize manifest manager for artifact tracking
+    manifest_manager = ManifestManager(outdir, run_name=f"pipeline_{correlation_id[:8]}")
+    manifest_manager.start_run(
+        params_config=params_config,
+        features_config=features_config,
+        grid_config=grid_config,
+        correlation_id=correlation_id,
+    )
     
     try:
         tracker = MLflowTracker(params_config.mlflow_tracking.model_dump())
@@ -208,8 +284,6 @@ def run_pipeline(
             extra={"error": str(e)},
         )
         tracker = None
-
-    outdir = ensure_dir(params_config.paths.outdir)
 
     _memory = None
     if params_config.caching.enabled:
@@ -225,9 +299,10 @@ def run_pipeline(
         "tracker": tracker,
         "outdir": outdir,
         "correlation_id": correlation_id,
+        "manifest_manager": manifest_manager,
     }
 
-    # 3. Load all step functions first (fail fast on missing steps)
+    # 5. Load all step functions first (fail fast on missing steps)
     step_functions: Dict[str, callable] = {}
     for step in params_config.pipeline:
         step_functions[step] = _load_step_function(step)
@@ -237,7 +312,14 @@ def run_pipeline(
         extra={"n_steps": len(step_functions)},
     )
 
-    # 4. Execute pipeline steps
+    # 6. Initialize profiler for performance tracking
+    profiler = PipelineProfiler(
+        pipeline_name="training_pipeline",
+        correlation_id=correlation_id,
+        track_memory=True,
+    )
+
+    # 7. Execute pipeline steps
     success = True
     failed_step: Optional[str] = None
     
@@ -249,14 +331,52 @@ def run_pipeline(
             for step in params_config.pipeline:
                 func = step_functions[step]
                 
-                # Execute step and update context
-                result = _execute_step(step, func, context, pipeline_logger)
+                # Execute step and update context (with profiling)
+                result = _execute_step(step, func, context, pipeline_logger, profiler)
                 if result:
                     context.update(result)
+                    
+                    # Record step duration in manifest
+                    if step in profiler._profile.step_durations:
+                        manifest_manager.add_step_duration(
+                            step, 
+                            profiler._profile.step_durations.get(step, 0)
+                        )
+        
+        # 8. Model comparison and selection (if models were trained)
+        if "final_pipelines" in context and context["final_pipelines"]:
+            logger.info("Comparing trained models...")
+            
+            # Collect metrics from context (you may need to adapt this based on actual structure)
+            metrics = context.get("metrics", {})
+            cv_results = context.get("cv_results", {})
+            
+            if metrics:
+                comparator = ModelComparator(metrics, cv_results)
+                comparison = comparator.compare(primary_metric="concordance")
+                comparator.print_comparison()
+                
+                best_selection = comparator.select_best()
+                context["best_model"] = best_selection.selected_model
+                context["model_comparison"] = comparison
+                
+                manifest_manager.set_best_model(
+                    best_selection.selected_model,
+                    metrics.get(best_selection.selected_model, {}),
+                )
+                
+                logger.info(
+                    f"Best model selected: {best_selection.selected_model}",
+                    extra={
+                        "best_model": best_selection.selected_model,
+                        "criterion": best_selection.selection_criterion.value,
+                    },
+                )
 
     except ClinicalSurvivalError as e:
         success = False
         failed_step = getattr(e, "step_name", None) or str(e.context.get("step", "unknown"))
+        manifest_manager.add_note(f"Pipeline failed at step: {failed_step}")
         logger.error(
             "Pipeline execution failed",
             extra={
@@ -269,6 +389,7 @@ def run_pipeline(
     
     except Exception as e:
         success = False
+        manifest_manager.add_note(f"Pipeline failed with unexpected error: {e}")
         logger.error(
             "Pipeline execution failed with unexpected error",
             extra={
@@ -288,12 +409,39 @@ def run_pipeline(
             models_trained=len(params_config.models),
             failed_step=failed_step,
         )
+        
+        # Finish profiling and save report
+        profile = profiler.finish()
+        
+        # Save profiling report
+        profile_path = outdir / "artifacts" / "pipeline_profile.json"
+        profiler.save_report(profile_path)
+        
+        # Add profile to manifest
+        manifest_manager.add_artifact(
+            "pipeline_profile",
+            profile_path,
+            category="profiling",
+            metadata={"total_duration": profile.total_duration_seconds},
+        )
+        
+        # Finalize and save manifest
+        manifest_manager.finalize(success=success)
+        manifest_path = manifest_manager.save()
+        
+        logger.info(f"Manifest saved to {manifest_path}")
+        
+        # Print summary if verbose logging is enabled
+        if params_config.logging.level.upper() in ("DEBUG", "INFO"):
+            profiler.print_summary()
     
     logger.info(
         "Pipeline execution completed successfully",
         extra={
             "correlation_id": correlation_id,
             "n_context_keys": len(context),
+            "total_duration_seconds": profile.total_duration_seconds,
+            "peak_memory_mb": profile.peak_memory_mb,
         },
     )
     

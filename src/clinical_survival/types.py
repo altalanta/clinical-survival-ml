@@ -493,3 +493,5 @@ def check_survival_array(y: Any) -> bool:
         return False
     return "event" in y.dtype.names and "time" in y.dtype.names
 
+
+
