@@ -1,12 +1,5 @@
 """Clinical Survival ML package."""
 
-from clinical_survival.testing import (
-    SyntheticDatasetGenerator,
-    PerformanceRegressionTester,
-    CrossValidationIntegrityChecker,
-    SurvivalBenchmarkSuite
-)
-
 from __future__ import annotations
 
 try:
@@ -14,6 +7,13 @@ try:
 except ImportError:
     # Fallback for development installations
     __version__ = "0.1.0"
+
+from clinical_survival.testing import (
+    SyntheticDatasetGenerator,
+    PerformanceRegressionTester,
+    CrossValidationIntegrityChecker,
+    SurvivalBenchmarkSuite
+)
 
 from clinical_survival.automl import AutoSurvivalML, create_automl_study
 from clinical_survival.counterfactual import (
@@ -126,4 +126,8 @@ __all__ = [
     "create_data_quality_config",
     "create_validation_rules",
     "save_data_quality_report",
+    "SyntheticDatasetGenerator",
+    "PerformanceRegressionTester",
+    "CrossValidationIntegrityChecker",
+    "SurvivalBenchmarkSuite",
 ]

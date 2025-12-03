@@ -25,3 +25,5 @@ def get_component(name: str):
         )
     return COMPONENT_REGISTRY[name]
 
+
+
