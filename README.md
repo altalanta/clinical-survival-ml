@@ -962,6 +962,157 @@ print(f"Best model: {manifest.best_model}")
 print(f"Duration: {manifest.duration_seconds:.1f}s")
 ```
 
+## Comprehensive Model Evaluation
+
+The pipeline includes a complete evaluation module with survival-specific metrics:
+
+```python
+from clinical_survival.pipeline.evaluator import (
+    evaluate_survival_model,
+    create_evaluation_summary,
+)
+
+# Full model evaluation
+result = evaluate_survival_model(
+    y_train=y_train,
+    y_test=y_test,
+    risk_scores=predictions,
+    survival_probs=surv_probs,
+    times=[365, 730, 1095],
+    model_name="xgb_cox",
+    n_bootstrap=200,
+)
+
+print(f"C-index: {result.concordance_index:.4f} ± {result.concordance_index_std:.4f}")
+print(f"IBS: {result.integrated_brier_score:.4f}")
+print(f"Mean AUC: {result.mean_auc:.4f}")
+```
+
+### Metrics Calculated
+
+| Metric | Description |
+|--------|-------------|
+| Concordance Index | Discrimination ability (with 95% CI) |
+| Integrated Brier Score | Overall prediction accuracy |
+| Time-dependent Brier | Accuracy at specific time points |
+| Time-dependent AUC | Discrimination at specific times |
+| Event Rate | Proportion of events in data |
+
+## Model Inference CLI
+
+Run predictions on new data using trained models:
+
+```bash
+# Batch predictions
+clinical-ml inference predict models/xgb_cox.joblib new_patients.csv -o predictions.csv
+
+# Single patient prediction
+clinical-ml inference single models/xgb_cox.joblib '{"age": 65, "stage": 2}'
+
+# Explain a prediction
+clinical-ml inference explain models/xgb_cox.joblib patients.csv --index 0
+
+# Compare multiple models
+clinical-ml inference compare "models/coxph.joblib,models/rsf.joblib" test_data.csv
+```
+
+### Python API
+
+```python
+from clinical_survival.inference import ModelInference
+
+# Load model
+inference = ModelInference.load("models/xgb_cox.joblib")
+
+# Single prediction with survival curve
+result = inference.predict(patient_features, times=[365, 730, 1095])
+print(f"Risk: {result.risk_score:.4f}")
+print(f"Category: {result.risk_category}")
+print(f"1-year survival: {result.survival_probabilities[365]:.1%}")
+
+# Batch predictions
+results = inference.predict_batch(patients_df)
+predictions_df = results.to_dataframe()
+```
+
+## Data Profiling
+
+Automated exploratory data analysis for survival datasets:
+
+```python
+from clinical_survival.data_profiling import DataProfiler, profile_data
+
+# Quick profile
+profile = profile_data(df, time_col="time", event_col="event")
+
+# Detailed profiler
+profiler = DataProfiler(df, time_col="time", event_col="event")
+profiler.generate_profile()
+profiler.print_summary()  # Rich console output
+profiler.save_report("data_profile.html")  # HTML report
+```
+
+### Profile Contents
+
+- **Summary Statistics**: Rows, columns, memory usage
+- **Column Profiles**: Type, missing values, unique values, distributions
+- **Survival Statistics**: Event rate, time distribution, KM estimates
+- **Correlations**: Numeric feature correlations
+- **Warnings**: High missing values, constant columns, etc.
+
+### Sample Output
+
+```
+📊 Dataset Overview
+Rows: 10,000  |  Columns: 25  |  Memory: 2.45 MB
+
+Survival Statistics:
+  Events: 3,247 (32.5%)
+  Censored: 6,753 (67.5%)
+  Time range: 1 - 2,556 days
+  KM median survival: 892 days
+  1-year survival: 78.3%
+```
+
+## Checkpoint and Resume
+
+Resume interrupted pipeline runs from the last successful step:
+
+```python
+from clinical_survival.checkpoint import CheckpointManager
+
+# Start run with checkpointing
+manager = CheckpointManager("results/checkpoints")
+manager.start_run(pipeline_steps=["load", "preprocess", "train"])
+
+# After each step
+manager.save_checkpoint("load", context)
+manager.mark_step_completed("load")
+
+# If run fails and needs to resume
+if manager.can_resume():
+    context = manager.load_latest_checkpoint()
+    resume_from = manager.get_resume_step()
+    print(f"Resuming from: {resume_from}")
+```
+
+### CLI Usage
+
+```bash
+# List previous runs
+clinical-ml training list-checkpoints
+
+# Resume a failed run
+clinical-ml training resume --run-id 20231203_143052_a1b2c3d4
+```
+
+### Features
+
+- **Automatic Checkpointing**: State saved after each pipeline step
+- **Smart Resume**: Skip completed steps when resuming
+- **Context Preservation**: Full pipeline context serialized
+- **Cleanup**: Old checkpoints automatically cleaned up
+
 ## Contributing
 
 Contributions are welcome! Please see the `CONTRIBUTING.md` file for details.
