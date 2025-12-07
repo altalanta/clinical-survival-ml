@@ -12,7 +12,7 @@ from rich.console import Console
 from clinical_survival.error_handling import CLIExceptionHandler
 from clinical_survival.logging_config import configure_logging, get_logger
 
-from . import training, data, monitoring, mlops, testing, dashboard, api
+from . import training, data, monitoring, mlops, testing, dashboard, api, inference
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -93,6 +93,7 @@ app.add_typer(mlops.app, name="mlops")
 app.add_typer(testing.app, name="testing")
 app.add_typer(dashboard.app, name="dashboard")
 app.add_typer(api.app, name="api")
+app.add_typer(inference.app, name="inference")
 
 
 def main_with_error_handling() -> None:
