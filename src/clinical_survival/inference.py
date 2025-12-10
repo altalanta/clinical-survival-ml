@@ -476,3 +476,4 @@ def load_model(model_path: Union[str, Path]) -> ModelInference:
     return ModelInference.load(model_path)
 
 
+

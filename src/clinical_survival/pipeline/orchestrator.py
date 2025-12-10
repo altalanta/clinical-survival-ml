@@ -43,6 +43,7 @@ from clinical_survival.model_selection import ModelComparator
 from clinical_survival.profiling import PipelineProfiler
 from clinical_survival.tracking import MLflowTracker
 from clinical_survival.utils import set_global_seed, ensure_dir
+from clinical_survival.checkpoint import create_checkpoint_manager, CheckpointManager
 
 # Get module logger
 logger = get_logger(__name__)
@@ -161,6 +162,9 @@ def run_pipeline(
     grid_config: Dict[str, Any],
     skip_health_checks: bool = False,
     skip_validation: bool = False,
+    enable_checkpoints: bool = True,
+    resume: bool = False,
+    run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Orchestrates the execution of the modular training pipeline.
@@ -266,7 +270,29 @@ def run_pipeline(
     # 4. Setup
     set_global_seed(params_config.seed)
     outdir = ensure_dir(params_config.paths.outdir)
-    
+
+    checkpoint_manager: Optional[CheckpointManager] = None
+    completed_steps: List[str] = []
+    if enable_checkpoints:
+        if resume:
+            checkpoint_manager = CheckpointManager.get_resumable_run(outdir / "checkpoints")
+            if checkpoint_manager:
+                completed_steps = checkpoint_manager.get_completed_steps()
+                logger.info(
+                    "Found resumable run",
+                    extra={"run_id": checkpoint_manager.run_id, "completed_steps": completed_steps},
+                )
+        if checkpoint_manager is None:
+            checkpoint_manager = create_checkpoint_manager(outdir, run_id=run_id)
+            checkpoint_manager.start_run(
+                pipeline_steps=params_config.pipeline,
+                correlation_id=correlation_id,
+            )
+        elif resume:
+            # Ensure correlation id recorded for resumed runs
+            checkpoint_manager._state.correlation_id = correlation_id
+            checkpoint_manager._save_state()
+
     # Initialize manifest manager for artifact tracking
     manifest_manager = ManifestManager(outdir, run_name=f"pipeline_{correlation_id[:8]}")
     manifest_manager.start_run(
@@ -302,6 +328,22 @@ def run_pipeline(
         "manifest_manager": manifest_manager,
     }
 
+    if checkpoint_manager and completed_steps:
+        latest_context = checkpoint_manager.load_latest_checkpoint() or {}
+        # Preserve critical objects from current process
+        latest_context.update(
+            {
+                "params_config": params_config,
+                "features_config": features_config,
+                "grid_config": grid_config,
+                "tracker": tracker,
+                "outdir": outdir,
+                "correlation_id": correlation_id,
+                "manifest_manager": manifest_manager,
+            }
+        )
+        context = latest_context
+
     # 5. Load all step functions first (fail fast on missing steps)
     step_functions: Dict[str, callable] = {}
     for step in params_config.pipeline:
@@ -329,6 +371,13 @@ def run_pipeline(
         
         with tracker_context:
             for step in params_config.pipeline:
+                if step in completed_steps:
+                    logger.info(
+                        f"Skipping previously completed step: {step}",
+                        extra={"step": step},
+                    )
+                    continue
+
                 func = step_functions[step]
                 
                 # Execute step and update context (with profiling)
@@ -342,6 +391,10 @@ def run_pipeline(
                             step, 
                             profiler._profile.step_durations.get(step, 0)
                         )
+
+                if checkpoint_manager:
+                    checkpoint_manager.save_checkpoint(step, context)
+                    checkpoint_manager.mark_step_completed(step)
         
         # 8. Model comparison and selection (if models were trained)
         if "final_pipelines" in context and context["final_pipelines"]:
@@ -377,6 +430,8 @@ def run_pipeline(
         success = False
         failed_step = getattr(e, "step_name", None) or str(e.context.get("step", "unknown"))
         manifest_manager.add_note(f"Pipeline failed at step: {failed_step}")
+        if checkpoint_manager:
+            checkpoint_manager.mark_run_failed(str(e))
         logger.error(
             "Pipeline execution failed",
             extra={
@@ -390,6 +445,8 @@ def run_pipeline(
     except Exception as e:
         success = False
         manifest_manager.add_note(f"Pipeline failed with unexpected error: {e}")
+        if checkpoint_manager:
+            checkpoint_manager.mark_run_failed(str(e))
         logger.error(
             "Pipeline execution failed with unexpected error",
             extra={
@@ -404,6 +461,9 @@ def run_pipeline(
         ) from e
     
     finally:
+        if checkpoint_manager and success:
+            checkpoint_manager.mark_run_completed()
+
         pipeline_logger.finish(
             success=success,
             models_trained=len(params_config.models),
