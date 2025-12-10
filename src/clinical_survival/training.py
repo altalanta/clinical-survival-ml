@@ -4,9 +4,22 @@ from clinical_survival.pipeline.orchestrator import run_pipeline
 
 
 def train_and_evaluate(
-    params_config: ParamsConfig, features_config: FeaturesConfig, grid_config: Dict[str, Any]
+    params_config: ParamsConfig,
+    features_config: FeaturesConfig,
+    grid_config: Dict[str, Any],
+    *,
+    resume: bool = False,
+    enable_checkpoints: bool = True,
+    run_id: str | None = None,
 ) -> None:
     """
     Entry point for the training and evaluation pipeline.
     """
-    run_pipeline(params_config, features_config, grid_config)
+    run_pipeline(
+        params_config,
+        features_config,
+        grid_config,
+        enable_checkpoints=enable_checkpoints,
+        resume=resume,
+        run_id=run_id,
+    )

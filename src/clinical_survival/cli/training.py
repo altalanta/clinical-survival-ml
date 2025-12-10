@@ -1,4 +1,6 @@
 from pathlib import Path
+from typing import Optional
+
 import typer
 from rich.console import Console
 
@@ -20,6 +22,21 @@ def run(
         "configs/model_grid.yaml", "--grid", "-g", exists=True,
         help="Path to the model grid configuration file."
     ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Resume from the latest failed run (if checkpoints exist).",
+    ),
+    disable_checkpoints: bool = typer.Option(
+        False,
+        "--no-checkpoints",
+        help="Disable checkpointing for this run.",
+    ),
+    run_id: Optional[str] = typer.Option(
+        None,
+        "--run-id",
+        help="Optional run identifier when resuming or forcing a specific ID.",
+    ),
 ) -> None:
     """Run the complete pipeline: train, evaluate, and generate a report."""
     console.print("🚀 Starting the full clinical survival analysis pipeline...", style="bold green")
@@ -32,7 +49,10 @@ def run(
     train_and_evaluate(
         params_config=params_config,
         features_config=features_config,
-        grid_config=grid_config
+        grid_config=grid_config,
+        resume=resume,
+        enable_checkpoints=not disable_checkpoints,
+        run_id=run_id,
     )
 
     console.print("2. [bold blue]Generating HTML report...[/bold blue]")

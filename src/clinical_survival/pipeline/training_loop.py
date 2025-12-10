@@ -18,7 +18,7 @@ from clinical_survival.pipeline.schemas import (
     validate_pipeline_step,
 )
 from clinical_survival.tracking import MLflowTracker
-from clinical_survival.utils import ensure_dir
+from clinical_survival.utils import ensure_dir, combine_survival_target
 
 from . import trainer, evaluator, explainer, registrar
 
@@ -92,6 +92,9 @@ def run_training_loop(
     
     models_dir = ensure_dir(outdir / "artifacts" / "models")
     final_pipelines: Dict[str, Any] = {}
+    metrics: Dict[str, Any] = {}
+    cv_results: Dict[str, Any] = {}
+    times = params_config.calibration.times_days if params_config and params_config.calibration else None
 
     for model_name in params_config.models:
         logger.info(f"Training model: {model_name}", extra={"model": model_name})
@@ -111,7 +114,24 @@ def run_training_loop(
 
             # Evaluate
             logger.debug(f"Evaluating {model_name}")
-            evaluator.evaluate_predictions(oof_preds, tracker)
+            y_struct = combine_survival_target(
+                time=y_data[params_config.time_col],
+                event=y_data[params_config.event_col],
+            ).values
+            eval_result = evaluator.evaluate_predictions(
+                oof_preds,
+                y_struct,
+                tracker=tracker,
+                model_name=model_name,
+                times=times,
+            )
+            metrics[model_name] = {
+                "concordance": eval_result.concordance_index,
+                "concordance_std": eval_result.concordance_index_std,
+                "ibs": eval_result.integrated_brier_score,
+                "mean_auc": eval_result.mean_auc,
+            }
+            cv_results[model_name] = eval_result.cv_scores
 
             # Explain
             explain_dir = ensure_dir(outdir / "artifacts" / "explainability" / model_name)
@@ -141,4 +161,8 @@ def run_training_loop(
         },
     )
 
-    return {"final_pipelines": final_pipelines}
+    return {
+        "final_pipelines": final_pipelines,
+        "metrics": metrics,
+        "cv_results": cv_results,
+    }
