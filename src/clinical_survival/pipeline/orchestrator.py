@@ -413,6 +413,25 @@ def run_pipeline(
                 context["best_model"] = best_selection.selected_model
                 context["model_comparison"] = comparison
                 
+                # Persist comparison artifacts
+                metrics_dir = context.get("metrics_dir") or (outdir / "metrics")
+                metrics_dir = ensure_dir(metrics_dir)
+                import json
+                comparison_path = metrics_dir / "model_comparison.json"
+                with comparison_path.open("w", encoding="utf-8") as f:
+                    json.dump(comparison, f, indent=2, default=str)
+
+                best_model_path = metrics_dir / "best_model.json"
+                with best_model_path.open("w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "best_model": best_selection.selected_model,
+                            "criterion": best_selection.selection_criterion.value,
+                        },
+                        f,
+                        indent=2,
+                    )
+
                 manifest_manager.set_best_model(
                     best_selection.selected_model,
                     metrics.get(best_selection.selected_model, {}),
@@ -484,6 +503,25 @@ def run_pipeline(
             category="profiling",
             metadata={"total_duration": profile.total_duration_seconds},
         )
+
+        # Add metrics artifacts to manifest
+        leaderboard_path = context.get("leaderboard_path")
+        if leaderboard_path:
+            manifest_manager.add_artifact(
+                "leaderboard",
+                leaderboard_path,
+                category="metrics",
+            )
+
+        metrics_dir = context.get("metrics_dir") or (outdir / "metrics")
+        comparison_path = metrics_dir / "model_comparison.json"
+        best_model_path = metrics_dir / "best_model.json"
+        for name, path in [
+            ("model_comparison", comparison_path),
+            ("best_model_info", best_model_path),
+        ]:
+            if path.exists():
+                manifest_manager.add_artifact(name, path, category="metrics")
         
         # Finalize and save manifest
         manifest_manager.finalize(success=success)
