@@ -66,6 +66,8 @@ def test_pipeline_end_to_end(pipeline_output_dir: Path):
     assert explain_dir.exists()
     assert cf_dir.exists()
     assert metrics_dir.exists()
+    assert (metrics_dir / "leaderboard.csv").exists()
+    assert (metrics_dir / "model_comparison.json").exists()
 
     # Assert that artifacts were created for each model
     params_config, _, _ = load_config(PARAMS_PATH, FEATURES_PATH, MODEL_GRID_PATH)
@@ -83,5 +85,10 @@ def test_pipeline_end_to_end(pipeline_output_dir: Path):
     ge_validations_dir = Path("great_expectations/uncommitted/validations")
     assert ge_validations_dir.exists()
     assert len(list(ge_validations_dir.rglob("*.html"))) > 0, "No GE validation docs found."
+
+    # Check checkpoints directory created by default
+    checkpoints_dir = pipeline_output_dir / "checkpoints"
+    assert checkpoints_dir.exists()
+    assert any(checkpoints_dir.rglob("state.json")), "No checkpoint state found."
 
 
