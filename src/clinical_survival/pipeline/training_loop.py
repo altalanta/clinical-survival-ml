@@ -91,6 +91,7 @@ def run_training_loop(
     )
     
     models_dir = ensure_dir(outdir / "artifacts" / "models")
+    metrics_dir = ensure_dir(outdir / "metrics")
     final_pipelines: Dict[str, Any] = {}
     metrics: Dict[str, Any] = {}
     cv_results: Dict[str, Any] = {}
@@ -161,8 +162,26 @@ def run_training_loop(
         },
     )
 
+    # Persist leaderboard for downstream reporting/comparison
+    try:
+        import pandas as pd
+
+        rows = []
+        for model, vals in metrics.items():
+            row = {"model": model}
+            row.update(vals)
+            rows.append(row)
+        leaderboard = pd.DataFrame(rows)
+        leaderboard_path = metrics_dir / "leaderboard.csv"
+        leaderboard.to_csv(leaderboard_path, index=False)
+    except Exception as exc:  # pragma: no cover - logging side-effect
+        logger.warning(f"Failed to write leaderboard: {exc}")
+        leaderboard_path = None
+
     return {
         "final_pipelines": final_pipelines,
         "metrics": metrics,
         "cv_results": cv_results,
+        "leaderboard_path": leaderboard_path,
+        "metrics_dir": metrics_dir,
     }

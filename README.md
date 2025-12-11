@@ -1074,6 +1074,16 @@ Survival Statistics:
   1-year survival: 78.3%
 ```
 
+## Metrics & Model Comparison Artifacts
+
+During training, metrics are now persisted for reporting and selection:
+
+- `metrics/leaderboard.csv`: Per-model metrics (C-index, IBS, mean AUC)
+- `metrics/model_comparison.json`: Full comparison report
+- `metrics/best_model.json`: Selected best model and criterion
+
+These are also added to the artifact manifest for reproducibility.
+
 ## Checkpoint and Resume
 
 Resume interrupted pipeline runs from the last successful step:
@@ -1081,7 +1091,6 @@ Resume interrupted pipeline runs from the last successful step:
 ```python
 from clinical_survival.checkpoint import CheckpointManager
 
-# Start run with checkpointing
 manager = CheckpointManager("results/checkpoints")
 manager.start_run(pipeline_steps=["load", "preprocess", "train"])
 
@@ -1089,29 +1098,33 @@ manager.start_run(pipeline_steps=["load", "preprocess", "train"])
 manager.save_checkpoint("load", context)
 manager.mark_step_completed("load")
 
-# If run fails and needs to resume
-if manager.can_resume():
-    context = manager.load_latest_checkpoint()
-    resume_from = manager.get_resume_step()
-    print(f"Resuming from: {resume_from}")
+# Resume
+context = manager.load_latest_checkpoint()
+resume_from = manager.get_resume_step()
 ```
 
 ### CLI Usage
 
 ```bash
-# List previous runs
-clinical-ml training list-checkpoints
+# Run with checkpointing (default on)
+clinical-ml training run --config configs/params.yaml --grid configs/model_grid.yaml
 
-# Resume a failed run
-clinical-ml training resume --run-id 20231203_143052_a1b2c3d4
+# Resume the most recent failed run
+clinical-ml training resume --outdir results
+
+# Resume a specific run-id
+clinical-ml training resume --outdir results --run-id 20231203_143052_a1b2c3d4
+
+# List available checkpoint runs
+clinical-ml training list-checkpoints --outdir results
 ```
 
 ### Features
 
 - **Automatic Checkpointing**: State saved after each pipeline step
 - **Smart Resume**: Skip completed steps when resuming
-- **Context Preservation**: Full pipeline context serialized
-- **Cleanup**: Old checkpoints automatically cleaned up
+- **Context Preservation**: Pipeline context serialized with IDs
+- **Manifest Integration**: Metrics and comparisons recorded for traceability
 
 ## Contributing
 
