@@ -37,6 +37,16 @@ def run(
         "--run-id",
         help="Optional run identifier when resuming or forcing a specific ID.",
     ),
+    enable_performance_monitoring: bool = typer.Option(
+        False,
+        "--performance-monitoring",
+        help="Enable detailed performance monitoring and optimization recommendations.",
+    ),
+    performance_report_path: Optional[Path] = typer.Option(
+        None,
+        "--performance-report",
+        help="Path to save performance monitoring report (default: results/artifacts/performance_report.md).",
+    ),
 ) -> None:
     """Run the complete pipeline: train, evaluate, and generate a report."""
     console.print("🚀 Starting the full clinical survival analysis pipeline...", style="bold green")
@@ -53,6 +63,8 @@ def run(
         resume=resume,
         enable_checkpoints=not disable_checkpoints,
         run_id=run_id,
+        enable_performance_monitoring=enable_performance_monitoring,
+        performance_report_path=str(performance_report_path) if performance_report_path else None,
     )
 
     console.print("2. [bold blue]Generating HTML report...[/bold blue]")

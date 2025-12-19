@@ -40,6 +40,13 @@ from clinical_survival.logging_config import (
     set_correlation_id,
 )
 from clinical_survival.model_selection import ModelComparator
+from clinical_survival.model_registry import get_registry, initialize_registry
+from clinical_survival.performance_monitor import (
+    start_performance_monitoring,
+    stop_performance_monitoring,
+    get_performance_report,
+    record_step_performance,
+)
 from clinical_survival.profiling import PipelineProfiler
 from clinical_survival.tracking import MLflowTracker
 from clinical_survival.utils import set_global_seed, ensure_dir
@@ -165,6 +172,8 @@ def run_pipeline(
     enable_checkpoints: bool = True,
     resume: bool = False,
     run_id: Optional[str] = None,
+    enable_performance_monitoring: bool = False,
+    performance_report_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Orchestrates the execution of the modular training pipeline.
@@ -354,12 +363,19 @@ def run_pipeline(
         extra={"n_steps": len(step_functions)},
     )
 
-    # 6. Initialize profiler for performance tracking
+    # 6. Initialize profilers for performance tracking
     profiler = PipelineProfiler(
         pipeline_name="training_pipeline",
         correlation_id=correlation_id,
         track_memory=True,
     )
+
+    # Initialize performance monitor if requested
+    perf_monitor = None
+    if enable_performance_monitoring:
+        logger.info("Performance monitoring enabled")
+        perf_monitor = start_performance_monitoring(enable_gpu=params_config.get('gpu', {}).get('enabled', False))
+        perf_monitor.record_step_start("pipeline_setup")
 
     # 7. Execute pipeline steps
     success = True
@@ -381,16 +397,24 @@ def run_pipeline(
                 func = step_functions[step]
                 
                 # Execute step and update context (with profiling)
+                if perf_monitor:
+                    perf_monitor.record_step_start(step)
+
                 result = _execute_step(step, func, context, pipeline_logger, profiler)
                 if result:
                     context.update(result)
-                    
+
                     # Record step duration in manifest
                     if step in profiler._profile.step_durations:
                         manifest_manager.add_step_duration(
-                            step, 
+                            step,
                             profiler._profile.step_durations.get(step, 0)
                         )
+
+                    # Record performance metrics for this step
+                    if perf_monitor:
+                        step_duration = profiler._profile.step_durations.get(step, 0)
+                        perf_monitor.record_step_end(step, duration_seconds=step_duration)
 
                 if checkpoint_manager:
                     checkpoint_manager.save_checkpoint(step, context)
@@ -444,6 +468,36 @@ def run_pipeline(
                         "criterion": best_selection.selection_criterion.value,
                     },
                 )
+
+                # Register best model in registry if available
+                try:
+                    registry = get_registry()
+                    model_path = final_pipelines[best_selection.selected_model]
+                    model_metrics = metrics.get(best_selection.selected_model, {})
+
+                    registered_version = registry.register_model(
+                        model_name=best_selection.selected_model,
+                        model_path=model_path,
+                        metadata={"metrics": model_metrics},
+                        created_by="pipeline_system",
+                        description=f"Auto-selected best model from pipeline run {correlation_id[:8]}",
+                    )
+
+                    logger.info(f"Registered best model {best_selection.selected_model} as {registered_version.version} in registry")
+
+                    # Add registry info to manifest
+                    manifest_manager.add_artifact(
+                        f"registry_{best_selection.selected_model}",
+                        registered_version.model_path,
+                        category="registry",
+                        metadata={
+                            "registry_version": registered_version.version,
+                            "registry_stage": registered_version.stage.value,
+                        }
+                    )
+
+                except Exception as e:
+                    logger.warning(f"Failed to register model in registry: {e}")
 
     except ClinicalSurvivalError as e:
         success = False
@@ -503,6 +557,37 @@ def run_pipeline(
             category="profiling",
             metadata={"total_duration": profile.total_duration_seconds},
         )
+
+        # Finish performance monitoring if enabled
+        if perf_monitor:
+            perf_monitor.record_step_end("pipeline_setup")
+            perf_monitor.stop_monitoring()
+
+            # Generate performance report
+            report_path = performance_report_path or (outdir / "artifacts" / "performance_report.md")
+            report_content = perf_monitor.generate_report(report_path)
+
+            # Save performance metrics
+            metrics_path = outdir / "artifacts" / "performance_metrics.json"
+            perf_monitor.save_metrics(metrics_path)
+
+            # Add to manifest
+            manifest_manager.add_artifact(
+                "performance_report",
+                report_path,
+                category="profiling",
+                metadata={"total_duration": perf_monitor.metrics.duration_seconds},
+            )
+            manifest_manager.add_artifact(
+                "performance_metrics",
+                metrics_path,
+                category="profiling",
+            )
+
+            logger.info(
+                f"Performance monitoring complete. Report saved to {report_path}",
+                extra={"report_path": str(report_path), "metrics_path": str(metrics_path)},
+            )
 
         # Add metrics artifacts to manifest
         leaderboard_path = context.get("leaderboard_path")
