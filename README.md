@@ -23,6 +23,10 @@ This project provides a comprehensive pipeline for clinical survival analysis, i
 - **Intermediate Caching:** Caches the results of expensive computations (like data preprocessing) to dramatically speed up subsequent runs.
 - **Advanced Explainability:** Generates SHAP explanations to understand model predictions at a global and local level.
 - **Counterfactual Explanations for Actionable Insights:** Uses DiCE to generate "what-if" scenarios.
+- **Performance Monitoring & Optimization:** Automated system resource tracking with actionable optimization recommendations.
+- **Model Registry & Governance:** Centralized model versioning, promotion workflows, and approval processes.
+- **Advanced Experiment Tracking:** Interactive dashboards, statistical comparisons, and performance trend analysis.
+- **Continuous Data Quality Monitoring:** Automated monitoring, alerting, and drift detection for production pipelines.
 
 ## Installation
 
@@ -1109,6 +1113,9 @@ resume_from = manager.get_resume_step()
 # Run with checkpointing (default on)
 clinical-ml training run --config configs/params.yaml --grid configs/model_grid.yaml
 
+# Run with performance monitoring and optimization recommendations
+clinical-ml training run --performance-monitoring --config configs/params.yaml --grid configs/model_grid.yaml
+
 # Resume the most recent failed run
 clinical-ml training resume --outdir results
 
@@ -1117,6 +1124,45 @@ clinical-ml training resume --outdir results --run-id 20231203_143052_a1b2c3d4
 
 # List available checkpoint runs
 clinical-ml training list-checkpoints --outdir results
+
+# Initialize model registry
+clinical-ml mlops init-registry --path results/model_registry
+
+# Register a trained model
+clinical-ml mlops register --model results/artifacts/models/rsf.joblib --name rsf --created-by pipeline
+
+# Promote model to staging
+clinical-ml mlops promote --name rsf --version v1 --stage staging --promoted-by admin
+
+# List models in registry
+clinical-ml mlops list --stage production
+
+# Generate registry report
+clinical-ml mlops report
+
+# Compare experiments with statistical analysis
+clinical-ml mlops compare-experiments --experiments exp1,exp2 --metrics concordance,ibs
+
+# Create interactive performance dashboard
+clinical-ml mlops dashboard --experiment exp1 --output dashboard.html
+
+# Plot metric trends across experiments
+clinical-ml mlops plot-trends --experiments exp1,exp2 --metrics concordance --output trends.html
+
+# Start continuous data quality monitoring
+clinical-ml monitoring start-quality-monitor --data-source data/production.csv --interval 1800
+
+# Perform immediate quality check
+clinical-ml monitoring check-quality --data-source data/new_batch.csv
+
+# List data quality alerts
+clinical-ml monitoring list-alerts --status active --severity high
+
+# Acknowledge an alert
+clinical-ml monitoring acknowledge-alert --alert-id alert_123 --user admin
+
+# Show quality metric trends
+clinical-ml monitoring quality-trends --metric missing_values_percentage --hours 48
 ```
 
 ### Features
@@ -1125,6 +1171,8 @@ clinical-ml training list-checkpoints --outdir results
 - **Smart Resume**: Skip completed steps when resuming
 - **Context Preservation**: Pipeline context serialized with IDs
 - **Manifest Integration**: Metrics and comparisons recorded for traceability
+- **Performance Monitoring**: System resource tracking with optimization recommendations
+- **Model Registry**: Centralized model versioning with promotion workflows
 
 ## Contributing
 
